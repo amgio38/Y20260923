@@ -238,9 +238,9 @@ commit sha 顯示成可點連結（回連 GitHub）。
 秒，看 herdr 那邊的 target agent 有沒有收到訊息；`var/serve.log` 也會留下
 「hook 已喚醒 …」或「hook 喚醒失敗…」的紀錄可以查。
 
-團隊目前的 SOP（見 `rule.md`）是：ISSUE 轉 `review` 後，`pb_hook` 訂閱**加上**主動用 herdr 傳一
-則訊息通知 CTO——`pb_hook` 訂閱只保證「以後這張單再變動會被動收到」，不等於「這次轉 review 這
-件事本身已經通知到了」，兩件事一起做才算收工。
+`pb_hook` 訂閱只保證「以後這張單再變動會被動收到」，不等於「這次轉 review 這件事本身已經
+通知到了」——如果需要「一轉 review 就立刻通知」，呼叫端自己在轉 review 之後另外主動通知一次，
+不要只靠訂閱。
 
 ---
 
@@ -272,7 +272,6 @@ commit sha 顯示成可點連結（回連 GitHub）。
 project_board/
 ├── README.md              ← 這份
 ├── LICENSE                ← MIT
-├── rule.md                ← 開發規範（動手前先讀，含 herdr 通報 SOP）
 ├── Makefile                ← build/linux/windows/test/vet/fmt/clean
 ├── install.sh／install.ps1 ← 一鍵安裝
 ├── service.sh              ← 背景常駐 start/stop/status/restart
@@ -300,7 +299,6 @@ project_board/
 
 | 檔 | 內容 |
 |---|---|
-| `rule.md` | **開發規範，動手前先讀**（含收工通報 SOP） |
 | `docs/REQ.md` | 需求規格：背景、範圍、功能／非功能需求 |
 | `docs/DATA_MODEL.md` | 資料模型：資料表、狀態機、ID 慣例、寫入者名冊 |
 | `docs/INTERFACE.md` | 介面規格：MCP tools 完整參數、REST 端點、dashboard 版面 |

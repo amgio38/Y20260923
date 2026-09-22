@@ -16,7 +16,7 @@ import (
 
 	"project_board/internal/domain"
 
-	_ "modernc.org/sqlite" // 純 Go driver（rule.md §三：不引入 cgo、不依賴系統 libsqlite）
+	_ "modernc.org/sqlite" // 純 Go driver：不引入 cgo、不依賴系統 libsqlite
 )
 
 // sentinel error（API_CONTRACT.md §2）：CLI／MCP／httpapi 一律用 errors.Is 判斷，不比對字串。

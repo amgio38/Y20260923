@@ -50,7 +50,7 @@ func buildServeHandler(st *store.Store, ghSecret string) http.Handler {
 }
 
 // cmdServe：常駐 REST＋dashboard＋MCP(HTTP)。
-// 啟動測試一律走 process 工具，禁裸 &／nohup（rule.md §二、TOOLS.md）。
+// 啟動測試一律走 process 工具，禁裸 &／nohup。
 func (a *app) cmdServe(args []string) int {
 	fs := a.newFlagSet("serve")
 	db := a.dbFlag(fs)

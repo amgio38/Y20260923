@@ -16,10 +16,12 @@ import (
 	"os"
 
 	"project_board/internal/store"
+	"project_board/internal/version"
 )
 
-// serverVersion 是 MCP initialize 回報的版本（跟 binary 版號對齊由 cmd/pb 負責，這裡只報 mcp 殼版本）。
-const serverVersion = "0.1.0"
+// serverVersion 是 MCP initialize 回報的版本，直接讀 internal/version 的單一真相源，
+// 不在這裡另外維護一份字面值（2026-09-23 前曾寫死 "0.1.0"，早就跟不上實際版本）。
+const serverVersion = version.Version
 
 // RunStdio 跑 JSON-RPC 2.0 over stdio（pb mcp），阻塞到 EOF／ctx 結束。
 func RunStdio(ctx context.Context, st *store.Store) error {

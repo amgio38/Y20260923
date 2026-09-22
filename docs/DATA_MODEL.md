@@ -247,7 +247,7 @@ Y20260916                                       project  in_progress  owner=huma
 
 **規則**：
 - 所有寫入類 MCP tool（`pb_create`／`pb_update`／`pb_transition`／`pb_assign`／`pb_link`／`pb_unlink`／`pb_verify`／`pb_comment`／`pb_delete`）**新增必要參數 `actor`**。
-- 所有寫入類 CLI 子命令新增 `--actor <name>`；未帶時退回 env `PB_ACTOR`；兩者都沒有 → 直接拒絕（「缺必要參數即拒絕」是 rule.md 既定原則，這裡不例外）。
+- 所有寫入類 CLI 子命令新增 `--actor <name>`；未帶時退回 env `PB_ACTOR`；兩者都沒有 → 直接拒絕（缺必要參數即拒絕，不猜、不用預設值補）。
 - `actor` 值須落在 §8 owner 名冊內（含 `human`），不在名冊內一律拒絕——避免 history 出現查無此人的 actor 污染稽核紀錄。
 - 各入口預設 `PB_ACTOR` 建議值：skill（小蝦）啟動時設 `PB_ACTOR=xiaoxia`；各 harness 的 MCP 設定（`INTEGRATION.md`）比照掛對應 owner 代號。
 - **信任邊界要寫明**：本系統不做身份驗證，`actor` 是呼叫端自報（自己講自己是誰）。這是內用小團隊下的合理取捨，但要在 `PROJECTBOARD_REQ20260920.md` NFR 明講，別讓人誤以為 history 有防偽造能力。

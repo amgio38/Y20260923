@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"project_board/internal/store"
+	"project_board/internal/version"
 )
 
 // 結束碼：0 成功、1 執行錯誤（store／domain 回的錯）、2 用法錯誤（參數缺漏／未知子命令）。
@@ -125,6 +126,9 @@ func (a *app) dispatch(args []string) int {
 		return a.cmdCommit(rest)
 	case "repo":
 		return a.cmdRepo(rest)
+	case "version", "-v", "--version":
+		fmt.Fprintln(a.stdout, version.Version)
+		return exitOK
 	case "help", "-h", "--help":
 		a.usage()
 		return exitOK
@@ -144,6 +148,7 @@ func (a *app) usage() {
   seed                                       建 Y20260916 專案節點（可重複跑）
   serve [--addr 127.0.0.1:8787]              常駐：REST ＋ dashboard ＋ MCP(HTTP)
   mcp                                         MCP over stdio（外部 harness 用）
+  version（或 -v／--version）                印版號
 
   tree   [--project X] [--status s] [--owner o] [--tag t] [--type t] [--depth n]
   get    <id>

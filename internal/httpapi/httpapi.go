@@ -7,7 +7,7 @@
 // 回傳「已掛好 REST ＋ dashboard」的單一 http.Handler；`pb serve` 直接以
 // `mux.Handle("/", httpapi.New(st))` 掛載，MCP(HTTP) 由 `/mcp` 另行掛載。
 //
-// 端點一律唯讀、直接呼叫 internal/store，不自行寫 SQL（rule.md §三）；
+// 端點一律唯讀、直接呼叫 internal/store，不自行寫 SQL；
 // 回應形狀權威：docs/INTERFACE.md §3。錯誤：store.ErrNotFound → 404、
 // 其餘 → 500（由 web handler 統一轉，見 internal/web Source 契約）。
 package httpapi
