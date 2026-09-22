@@ -1,0 +1,30 @@
+#!/bin/sh
+# ProjectBoard post-commit hook：把這次 commit 掛到訊息中的單號。
+# 由 scripts/install-git-hooks.sh 設定 core.hooksPath 啟用。
+# 來源：Y20260920/REQ-V04-GIT-INTEGRATION/ISSUE-GIT-HOOK。
+#
+# 解析順序（PB_BIN／PB_DB／actor）：
+#   PB_BIN   env → git config pb.bin → <repo>/bin/pb → PATH 的 pb
+#   PB_DB    env → git config pb.db  → <repo>/var/board.db
+#   actor    env PB_ACTOR → git config pb.actor → human
+# 掛不上（沒單號／pb 不在）一律不擋 commit。
+
+root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+PB_BIN="${PB_BIN:-$(git config pb.bin 2>/dev/null || true)}"
+if [ -z "$PB_BIN" ]; then
+	if [ -n "$root" ] && [ -x "$root/bin/pb" ]; then PB_BIN="$root/bin/pb"; else PB_BIN="pb"; fi
+fi
+
+PB_DB="${PB_DB:-$(git config pb.db 2>/dev/null || true)}"
+if [ -z "$PB_DB" ] && [ -n "$root" ] && [ -f "$root/var/board.db" ]; then
+	PB_DB="$root/var/board.db"
+fi
+[ -n "$PB_DB" ] && export PB_DB
+
+ACTOR="${PB_ACTOR:-$(git config pb.actor 2>/dev/null || echo human)}"
+sha="$(git rev-parse HEAD 2>/dev/null || true)"
+[ -n "$sha" ] || exit 0
+
+git log -1 --format=%B | "$PB_BIN" commit attach --sha "$sha" --actor "$ACTOR" >/dev/null 2>&1 || true
+exit 0

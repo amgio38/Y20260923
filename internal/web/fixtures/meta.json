@@ -1,0 +1,27 @@
+{
+  "types": [
+    {"key": "project", "label": "專案", "id_prefix": "", "parent_type": "", "sort": 1},
+    {"key": "req", "label": "需求", "id_prefix": "REQ", "parent_type": "", "sort": 2},
+    {"key": "issue", "label": "議題", "id_prefix": "ISSUE", "parent_type": "", "sort": 3},
+    {"key": "report", "label": "報告", "id_prefix": "REPORT", "parent_type": "", "sort": 4},
+    {"key": "item", "label": "母表項目", "id_prefix": "ITEM", "parent_type": "req", "sort": 5},
+    {"key": "bug", "label": "BUG", "id_prefix": "BUG", "parent_type": "req", "sort": 6},
+    {"key": "plan", "label": "計畫", "id_prefix": "PLAN", "parent_type": "", "sort": 7}
+  ],
+  "owners": ["xiaoxia", "kaimake", "kaimadi", "yilong", "claude", "human", "unassigned"],
+  "statuses": [
+    {"key": "todo", "label": "未開始", "icon": "○", "color": "#5f6368", "sort": 1},
+    {"key": "in_progress", "label": "進行中", "icon": "◐", "color": "#1a73e8", "sort": 2},
+    {"key": "review", "label": "待驗收", "icon": "◑", "color": "#f9ab00", "sort": 3},
+    {"key": "blocked", "label": "卡住", "icon": "●", "color": "#d93025", "sort": 4},
+    {"key": "hold", "label": "暫緩", "icon": "◌", "color": "#80868b", "sort": 5},
+    {"key": "done", "label": "完成", "icon": "✔", "color": "#188038", "sort": 6},
+    {"key": "cancel", "label": "不做", "icon": "✕", "color": "#9aa0a6", "sort": 7}
+  ],
+  "tabs": [
+    {"key": "focus", "label": "焦點", "sort": 1},
+    {"key": "progress", "label": "進度", "sort": 2},
+    {"key": "checklist", "label": "母表", "sort": 3},
+    {"key": "weekly", "label": "週報", "sort": 4}
+  ]
+}

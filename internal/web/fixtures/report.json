@@ -1,0 +1,15 @@
+{
+  "week_start": "2026-09-14T00:00:00+08:00",
+  "week_end": "2026-09-21T00:00:00+08:00",
+  "did": [
+    { "id": 3, "node_id": "Y20260916/REQ-ARCH/ISSUE-ARCH-BFF", "ts": "2026-09-20T03:10:00+08:00", "actor": "kaimadi", "action": "transition", "from_val": "in_progress", "to_val": "review", "note": "BFF 分層整理 進 review 待驗收" },
+    { "id": 2, "node_id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03", "ts": "2026-09-20T02:06:00+08:00", "actor": "xiaoxia", "action": "transition", "from_val": "todo", "to_val": "blocked", "note": "等 CONC01 併發案例" }
+  ],
+  "closed": [
+    { "id": 1, "node_id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A", "ts": "2026-09-19T18:00:00+08:00", "actor": "xiaoxia", "action": "verify", "note": "覆蓋率 98%" }
+  ],
+  "open": [
+    { "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC01", "type": "issue", "title": "併發案例", "status": "in_progress", "owner": "xiaoxia" },
+    { "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE", "type": "issue", "title": "store 分層整理", "status": "in_progress", "owner": "kaimadi" }
+  ]
+}

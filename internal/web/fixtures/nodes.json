@@ -1,0 +1,120 @@
+{
+  "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A": {
+    "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A",
+    "type": "issue",
+    "title": "admin-bff UT90 軌A",
+    "status": "done",
+    "owner": "xiaoxia",
+    "priority": "high",
+    "tags": "admin-bff,ut90",
+    "body": "admin-bff 覆蓋率拉到 90% 以上。\n\n- UT90 軌 A：補齊核心路徑單測\n- go test -race 全綠\n- 收單證據見 history 的 verify 事件",
+    "created_at": "2026-09-19T22:10:00+08:00",
+    "updated_at": "2026-09-20T01:03:00+08:00",
+    "links": [
+      { "kind": "commit", "target": "8094064", "note": "" }
+    ],
+    "children": [
+      {
+        "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A/REPORT-xiaoxia-20260919",
+        "type": "report",
+        "status": "done"
+      }
+    ]
+  },
+  "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-B": {
+    "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-B",
+    "type": "issue",
+    "title": "admin-bff UT90 軌B",
+    "status": "done",
+    "owner": "kaimake",
+    "priority": "high",
+    "tags": "admin-bff,ut90",
+    "body": "UT90 軌 B：周邊模組覆蓋率補齊，已完成。",
+    "created_at": "2026-09-19T22:20:00+08:00",
+    "updated_at": "2026-09-20T00:40:00+08:00",
+    "links": [
+      { "kind": "commit", "target": "8094102", "note": "" }
+    ],
+    "children": []
+  },
+  "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC01": {
+    "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC01",
+    "type": "issue",
+    "title": "併發案例（CONC01）",
+    "status": "in_progress",
+    "owner": "xiaoxia",
+    "priority": "high",
+    "tags": "conc,wip",
+    "body": "併發寫入案例，作為 CONC03 保護機制的前置。",
+    "created_at": "2026-09-19T22:30:00+08:00",
+    "updated_at": "2026-09-20T02:00:00+08:00",
+    "links": [],
+    "children": []
+  },
+  "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03": {
+    "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03",
+    "type": "issue",
+    "title": "併發寫入保護",
+    "status": "blocked",
+    "owner": "unassigned",
+    "priority": "high",
+    "tags": "conc",
+    "body": "等 CONC01 的併發案例定案後才動；目前缺 expected_updated_at 的實測場景。",
+    "created_at": "2026-09-19T22:35:00+08:00",
+    "updated_at": "2026-09-20T02:05:00+08:00",
+    "links": [
+      {
+        "kind": "depends_on",
+        "target": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC01",
+        "note": "等 CONC01 併發案例"
+      }
+    ],
+    "children": []
+  },
+  "Y20260916/REQ-ARCH/ISSUE-ARCH-BFF": {
+    "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-BFF",
+    "type": "issue",
+    "title": "BFF 分層整理",
+    "status": "review",
+    "owner": "kaimadi",
+    "priority": "medium",
+    "tags": "arch,bff",
+    "body": "BFF 分層整理完成，待 CTO 驗收。證據：go vet 乾淨、分層檢查通過。",
+    "created_at": "2026-09-19T23:00:00+08:00",
+    "updated_at": "2026-09-20T03:10:00+08:00",
+    "links": [
+      { "kind": "file", "target": "docs/INTERFACE.md", "note": "分層依介面規格" }
+    ],
+    "children": []
+  },
+  "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE": {
+    "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE",
+    "type": "issue",
+    "title": "store 分層整理",
+    "status": "todo",
+    "owner": "kaimadi",
+    "priority": "low",
+    "tags": "arch,store,pending-decision",
+    "body": "store 分層整理，未開始。",
+    "created_at": "2026-09-19T23:05:00+08:00",
+    "updated_at": "2026-09-19T23:05:00+08:00",
+    "links": [],
+    "children": []
+  },
+  "Y20260916/REQ-ARCH/ISSUE-ARCH-HOLD": {
+    "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-HOLD",
+    "type": "issue",
+    "title": "母表建模評估",
+    "status": "hold",
+    "owner": "claude",
+    "priority": "low",
+    "tags": "arch,index,pending-decision",
+    "body": "母表建模（D4）待學長裁示，暫緩。",
+    "created_at": "2026-09-19T23:10:00+08:00",
+    "updated_at": "2026-09-19T23:10:00+08:00",
+    "links": [
+      { "kind": "doc", "target": "PROJECTBOARD_REQ20260920.md", "note": "見 §9 D4" }
+    ],
+    "children": []
+  }
+}

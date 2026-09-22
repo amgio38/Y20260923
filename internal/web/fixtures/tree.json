@@ -1,0 +1,105 @@
+[
+  {
+    "id": "Y20260916",
+    "type": "project",
+    "title": "Y20260916 專案",
+    "status": "in_progress",
+    "owner": "human",
+    "priority": "medium",
+    "children": [
+      {
+        "id": "Y20260916/REQ-MEMBER-CORE",
+        "type": "req",
+        "title": "會員核心（MEMBER-CORE）",
+        "status": "in_progress",
+        "owner": "yilong",
+        "priority": "high",
+        "children": [
+          {
+            "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A",
+            "type": "issue",
+            "title": "admin-bff UT90 軌A",
+            "status": "done",
+            "owner": "xiaoxia",
+            "priority": "high",
+            "children": [
+              {
+                "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A/REPORT-xiaoxia-20260919",
+                "type": "report",
+                "title": "小蝦 2026-09-19 回報",
+                "status": "done",
+                "owner": "xiaoxia",
+                "priority": "medium",
+                "children": []
+              }
+            ]
+          },
+          {
+            "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-B",
+            "type": "issue",
+            "title": "admin-bff UT90 軌B",
+            "status": "done",
+            "owner": "kaimake",
+            "priority": "high",
+            "children": []
+          },
+          {
+            "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC01",
+            "type": "issue",
+            "title": "併發案例（CONC01）",
+            "status": "in_progress",
+            "owner": "xiaoxia",
+            "priority": "high",
+            "children": []
+          },
+          {
+            "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03",
+            "type": "issue",
+            "title": "併發寫入保護",
+            "status": "blocked",
+            "owner": "unassigned",
+            "priority": "high",
+            "children": []
+          }
+        ]
+      },
+      {
+        "id": "Y20260916/REQ-ARCH",
+        "type": "req",
+        "title": "架構體檢（ARCH）",
+        "status": "in_progress",
+        "owner": "yilong",
+        "priority": "medium",
+        "children": [
+          {
+            "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-BFF",
+            "type": "issue",
+            "title": "BFF 分層整理",
+            "status": "review",
+            "owner": "kaimadi",
+            "priority": "medium",
+            "children": []
+          },
+          {
+            "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE",
+            "type": "issue",
+            "title": "store 分層整理",
+            "status": "todo",
+            "owner": "kaimadi",
+            "priority": "low",
+            "children": []
+          },
+          {
+            "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-HOLD",
+            "type": "issue",
+            "title": "母表建模評估",
+            "status": "hold",
+            "owner": "claude",
+            "priority": "low",
+            "children": []
+          }
+        ]
+      }
+    ]
+  }
+]

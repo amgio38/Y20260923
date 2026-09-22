@@ -1,0 +1,9 @@
+# 每行一個 owner 代號，# 開頭是註解、空行忽略。
+# 複製這份檔案成 owners.txt（跟 pb 執行檔同一個工作目錄，或用 PB_OWNERS_FILE
+# 環境變數指定路徑），改成你自己團隊的名字，不用重編、不用改任何原始碼。
+# 沒有 owners.txt、也沒設 PB_OWNERS 環境變數時，系統只認 "unassigned" 一個值。
+program1
+program2
+program3
+human
+unassigned

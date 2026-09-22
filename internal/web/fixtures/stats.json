@@ -1,0 +1,86 @@
+{
+  "count_by_status": {
+    "todo": 1,
+    "in_progress": 4,
+    "review": 1,
+    "blocked": 1,
+    "hold": 1,
+    "done": 3,
+    "cancel": 0
+  },
+  "count_by_owner": {
+    "xiaoxia": 1,
+    "kaimake": 0,
+    "kaimadi": 2,
+    "yilong": 2,
+    "claude": 1,
+    "human": 1,
+    "unassigned": 1
+  },
+  "req_progress": {
+    "Y20260916/REQ-MEMBER-CORE": 0.5,
+    "Y20260916/REQ-ARCH": 0.0
+  },
+  "avg_dwell_days": {
+    "xiaoxia": 1.5,
+    "kaimadi": 0.8,
+    "yilong": 2.1,
+    "claude": 0.3,
+    "human": 4.0,
+    "unassigned": 1.0
+  },
+  "self_verified_count": 1,
+  "focus": {
+    "blocked": [
+      {
+        "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03",
+        "title": "併發寫入保護",
+        "owner": "unassigned",
+        "reason": "等 CONC01 併發案例"
+      }
+    ],
+    "awaiting_decision": [
+      {
+        "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-HOLD",
+        "title": "母表建模評估",
+        "note": "D4 母表建模待裁示"
+      },
+      {
+        "id": "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE",
+        "title": "store 分層整理",
+        "note": "A7 CI Go 版本待裁示"
+      }
+    ],
+    "recent": [
+      {
+        "ts": "2026-09-20T03:10:00+08:00",
+        "actor": "kaimadi",
+        "node_id": "Y20260916/REQ-ARCH/ISSUE-ARCH-BFF",
+        "action": "transition",
+        "summary": "BFF 分層整理 進 review 待驗收"
+      },
+      {
+        "ts": "2026-09-20T02:06:00+08:00",
+        "actor": "xiaoxia",
+        "node_id": "Y20260916/REQ-MEMBER-CORE/ISSUE-CONC03",
+        "action": "transition",
+        "summary": "併發寫入保護 卡 blocked（等 CONC01）"
+      },
+      {
+        "ts": "2026-09-20T01:03:00+08:00",
+        "actor": "xiaoxia",
+        "node_id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A",
+        "action": "verify",
+        "summary": "收 admin-bff UT90 軌A（98%）"
+      }
+    ],
+    "self_verified": [
+      {
+        "id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A",
+        "title": "admin-bff UT90 軌A",
+        "owner": "xiaoxia",
+        "note": "[self-verified] 總覆蓋 98.0%"
+      }
+    ]
+  }
+}

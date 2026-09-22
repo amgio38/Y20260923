@@ -1,0 +1,5 @@
+[
+  { "key": "A1", "item_id": "Y20260916/REQ-MEMBER-CORE/ITEM-A1", "title": "四服務界線", "status": "done", "owner": "xiaoxia", "issue_id": "Y20260916/REQ-MEMBER-CORE/ISSUE-ADMIN-BFF-UT90-A" },
+  { "key": "A2", "item_id": "Y20260916/REQ-MEMBER-CORE/ITEM-A2", "title": "共用慣例", "status": "in_progress", "owner": "kaimake" },
+  { "key": "B1", "item_id": "Y20260916/REQ-ARCH/ITEM-B1", "title": "分層掃描", "status": "review", "owner": "yilong", "issue_id": "Y20260916/REQ-ARCH/ISSUE-ARCH-STORE" }
+]

@@ -1,0 +1,13 @@
+# 建置產物
+/bin/
+/devserver
+
+# 執行期資料（真相源 DB 與匯出）
+/var/
+
+# 本機自訂 owner 名冊（範本見 owners.example.txt，複製改名成這個檔）
+/owners.txt
+
+# 編輯器／OS
+*.swp
+.DS_Store

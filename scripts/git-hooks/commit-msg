@@ -1,0 +1,19 @@
+#!/bin/sh
+# ProjectBoard commit-msg hook：提醒「訊息要帶單號」，否則 post-commit 不會自動掛單。
+# 只提醒、不擋（要嚴格擋請自行改成 exit 1）。可用 PB_SKIP_TICKET_CHECK=1 略過。
+# 來源：Y20260920/REQ-V04-GIT-INTEGRATION/ISSUE-GIT-HOOK。
+
+msgfile="$1"
+[ -n "$msgfile" ] && [ -f "$msgfile" ] || exit 0
+[ -n "${PB_SKIP_TICKET_CHECK:-}" ] && exit 0
+
+# merge／revert／fixup 本來就不帶單號，略過。
+if head -1 "$msgfile" | grep -Eq '^(Merge|Revert|fixup!|squash!)'; then
+	exit 0
+fi
+
+if ! grep -Eq 'Y[0-9]{8}(/[A-Z0-9][A-Z0-9-]*)+' "$msgfile"; then
+	echo "提醒：這筆 commit 訊息沒有 ProjectBoard 單號，之後不會自動掛到單。" >&2
+	echo "      要自動掛請在訊息加：#Y20260920/REQ-…/ISSUE-…（略過：PB_SKIP_TICKET_CHECK=1）" >&2
+fi
+exit 0
