@@ -50,14 +50,12 @@ Project
 ## 安裝
 
 ### 一鍵（新機器，還沒 clone 過）
-
-```bash
 # Linux / macOS
+```bash
 curl -fsSL https://raw.githubusercontent.com/amgio38/Y20260923/main/install.sh | bash
 ```
-
-```powershell
 # Windows（PowerShell）
+```powershell
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/amgio38/Y20260923/main/install.ps1 -OutFile install.ps1
 .\install.ps1
 ```
