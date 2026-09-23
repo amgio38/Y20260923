@@ -164,12 +164,18 @@ else
 	prompt_msg="安裝目錄（原始碼＋資料放這裡，直接按 Enter 用預設值 $DEFAULT_HOME_DIR）： "
 	if [ -t 0 ]; then
 		read -r -p "$prompt_msg" prompt_dir
-	elif ! read -r -p "$prompt_msg" prompt_dir 2>/dev/null < /dev/tty; then
-		# 例如 curl | bash 且沒有終端機可問（stdin 被 pipe 佔掉、/dev/tty 也開不了）：
-		# 不強行卡住等輸入，直接用預設值，讓 unattended 安裝也能跑完。
+	elif { exec 3</dev/tty; } 2>/dev/null; then
+		# curl | bash 這種情境：腳本本體的 stdin 被 pipe 佔走，但終端機本身
+		# （/dev/tty）還在。先安靜地探測 /dev/tty 開不開得起來（探測用的 fd 3
+		# 才套 2>/dev/null，不能套在下面真正要顯示提示字的 read 身上——套上去
+		# 的話 -p 的提示文字會被一起吃掉，畫面看起來像當機，使用者根本不知道
+		# 在等他按 Enter。血淋淋教訓：曾經因為這行多餘的 2>/dev/null 搞到提示
+		# 完全不見，只能對著空白畫面等。
+		exec 3<&-
+		read -r -p "$prompt_msg" prompt_dir < /dev/tty
+	else
 		log "非互動模式（沒有終端機可問），用預設安裝目錄：$DEFAULT_HOME_DIR"
 		log "要指定別的路徑：PROJECT_BOARD_HOME=/your/path bash install.sh，或先把腳本存下來本機執行再回答。"
-		prompt_dir=""
 	fi
 	HOME_DIR="${prompt_dir:-$DEFAULT_HOME_DIR}"
 fi
