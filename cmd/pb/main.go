@@ -258,8 +258,13 @@ func (a *app) resolveActor(explicit string) (string, error) {
 	return "", errMissingActor
 }
 
-// openStore：New ＋ Migrate（migration 可重複跑，DATA_MODEL.md §11.7）。
+// openStore：mkdirFor ＋ New ＋ Migrate（migration 可重複跑，DATA_MODEL.md §11.7）。
+// mkdirFor 放在這個共用出入口，讓 serve／mcp／seed…每個子命令在全新 checkout（var/
+// 目錄還不存在）第一次跑都能自己生出目錄＋檔案＋schema，不用另外先手動 `pb init`。
 func openStore(dbPath string) (*store.Store, error) {
+	if err := mkdirFor(dbPath); err != nil {
+		return nil, err
+	}
 	st, err := store.New(dbPath)
 	if err != nil {
 		return nil, err

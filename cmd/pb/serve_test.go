@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -106,8 +107,15 @@ func TestCmdServe(t *testing.T) {
 		t.Errorf("PB_ADDR 沒生效: %q", gotAddr)
 	}
 
-	// DB 開不起來 → 早退且不啟動 server
-	if code := ta.run("serve", "--db", filepath.Join(t.TempDir(), "no-such-dir", "x.db")); code != exitErr {
+	// DB 開不起來 → 早退且不啟動 server。
+	// 缺目錄本身現在會被 openStore 的 mkdirFor 自動補上（第一次啟動免手動 pb
+	// init，裁示），所以這裡用「路徑上有個同名檔案擋住，建不了目錄」製造真正
+	// 開不起來的情境。
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := ta.run("serve", "--db", filepath.Join(blocked, "sub", "x.db")); code != exitErr {
 		t.Errorf("壞 DB code=%d", code)
 	}
 }
@@ -144,7 +152,11 @@ func TestCmdMCP(t *testing.T) {
 	if code := ta.run("mcp", "--nope"); code != exitUsage {
 		t.Errorf("壞 flag code=%d", code)
 	}
-	if code := ta.run("mcp", "--db", filepath.Join(t.TempDir(), "no-such-dir", "x.db")); code != exitErr {
+	blocked := filepath.Join(t.TempDir(), "blocked")
+	if err := os.WriteFile(blocked, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := ta.run("mcp", "--db", filepath.Join(blocked, "sub", "x.db")); code != exitErr {
 		t.Errorf("壞 DB code=%d", code)
 	}
 }

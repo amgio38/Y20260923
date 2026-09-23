@@ -41,10 +41,8 @@ start() {
 		echo "找不到 $BIN。先在專案目錄執行：go build -o bin/pb ./cmd/pb" >&2
 		exit 1
 	fi
-	if [[ ! -f "$DB" ]]; then
-		echo "找不到 $DB。先執行：./bin/pb init --db $DB" >&2
-		exit 1
-	fi
+	# 不擋「$DB 還不存在」：pb serve 自己會建目錄＋檔案＋schema（第一次啟動就
+	# 自動初始化，不用先手動跑 pb init）。
 	mkdir -p "$ROOT/var"
 
 	local pid

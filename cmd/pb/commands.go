@@ -43,9 +43,6 @@ func (a *app) cmdInit(args []string) int {
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return exitUsage
 	}
-	if err := mkdirFor(*db); err != nil {
-		return a.fail(err)
-	}
 	return a.withStore(*db, func(ctx context.Context, st *store.Store) error {
 		v, err := st.SchemaVersion(ctx)
 		if err != nil {
