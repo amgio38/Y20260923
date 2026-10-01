@@ -24,6 +24,14 @@ function Ok($name) { Write-Host "ok: $name" }
 function Bad($name, $detail) {
     Write-Host "FAIL: $name" -ForegroundColor Red
     if ($detail) { Write-Host "  $detail" -ForegroundColor Red }
+    # 在 GitHub Actions 裡，同時印成 ::error:: 註解：公開的 check-runs API 讀得到註解，
+    # 不用登入就能看到失敗的原因（完整的步驟記錄要登入才下載得到）。
+    if ($env:GITHUB_ACTIONS) {
+        $msg = "$name | $detail"
+        if ($msg.Length -gt 1500) { $msg = $msg.Substring(0, 1500) + "..." }
+        $msg = $msg -replace "`r?`n", "%0A"
+        Write-Host "::error::$msg"
+    }
     $script:fail = 1
 }
 function Check($cond, $name, $detail) { if ($cond) { Ok $name } else { Bad $name $detail } }

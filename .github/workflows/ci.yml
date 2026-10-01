@@ -102,6 +102,7 @@ jobs:
         shell: pwsh
         run: ./scripts/install-ps1.test.ps1
       - name: install.ps1 tests (Windows PowerShell 5.1)
+        if: always()
         shell: powershell
         run: ./scripts/install-ps1.test.ps1
 
@@ -122,4 +123,11 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go test
-        run: go test ./...
+        shell: bash
+        run: |
+          set +e
+          go test ./... 2>&1 | tee test.log
+          code=${PIPESTATUS[0]}
+          # 失敗的測試名稱另外印成 ::error:: 註解，公開的 API 不用登入就讀得到。
+          grep -E '^(--- FAIL|FAIL|panic:)' test.log | head -20 | while IFS= read -r line; do echo "::error::$line"; done
+          exit $code
