@@ -1,4 +1,4 @@
-# ProjectBoard 一鍵安裝腳本（Windows / PowerShell）。
+﻿# ProjectBoard 一鍵安裝腳本（Windows / PowerShell）。
 #
 # 用法（Windows PowerShell 5.1 或 PowerShell 7 都可以）：
 #   Invoke-WebRequest -Uri https://raw.githubusercontent.com/amgio38/Y20260923/main/install.ps1 -OutFile install.ps1

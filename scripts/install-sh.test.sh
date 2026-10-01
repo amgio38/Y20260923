@@ -393,6 +393,19 @@ if [ "$(id -u)" != 0 ]; then
 	chmod 0755 "$work/ro"
 fi
 
+# --- PowerShell 腳本的編碼 --------------------------------------------------------
+# Windows PowerShell 5.1 讀沒有 BOM 的 .ps1 時，用的是系統的舊式編碼而不是 UTF-8：腳本裡的中文會變亂碼，
+# 嚴重的直接是語法錯誤（CI 的 Windows 上真的發生過）。所以只要 .ps1 裡有非 ASCII 字元，就必須以
+# UTF-8 BOM 開頭。這支測試在 Linux 上就抓得到，不用等 Windows 的 CI。
+nobom=""
+for f in "$root"/*.ps1 "$root"/scripts/*.ps1; do
+	[ -f "$f" ] || continue
+	if LC_ALL=C grep -q '[^ -~[:space:]]' "$f" && [ "$(head -c 3 "$f" | od -An -tx1 | tr -d ' \n')" != "efbbbf" ]; then
+		nobom="$nobom ${f#"$root"/}"
+	fi
+done
+if [ -z "$nobom" ]; then ok "含中文的 .ps1 都有 UTF-8 BOM（Windows PowerShell 5.1 才讀得對）"; else bad "含非 ASCII 的 .ps1 要有 UTF-8 BOM" "缺 BOM：$nobom"; fi
+
 # --- 暫存檔乾淨 ---------------------------------------------------------------
 mkdir -p "$work/tmpdir"
 rm -rf "$work/hc"

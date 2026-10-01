@@ -1,4 +1,4 @@
-# install.ps1 的端到端測試，網路換成本機檔案（file:// 的 release 目錄）。
+﻿# install.ps1 的端到端測試，網路換成本機檔案（file:// 的 release 目錄）。
 #
 # 跑的是真正的 install.ps1——參數與輸入檢查、CPU 判斷、checksum 驗證、zip 成員白名單、
 # pb.exe 能不能跑的檢查、安裝目錄的處理——對著這裡用真的 pb 打出來的 zip。重點跟 install-sh.test.sh
