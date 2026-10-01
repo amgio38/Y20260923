@@ -19,6 +19,7 @@ var statusIcon = map[domain.Status]string{
 	domain.StatusHold:       "⏸",
 	domain.StatusDone:       "✅",
 	domain.StatusCancel:     "❌",
+	domain.StatusArchived:   "📦",
 }
 
 func icon(s domain.Status) string {
@@ -316,6 +317,7 @@ func (a *app) printStats(st store.Stats) {
 	order := []domain.Status{
 		domain.StatusTodo, domain.StatusInProgress, domain.StatusReview,
 		domain.StatusBlocked, domain.StatusHold, domain.StatusDone, domain.StatusCancel,
+		domain.StatusArchived,
 	}
 	for _, s := range order {
 		fmt.Fprintf(a.stdout, "  %s %-12s %d\n", icon(s), s, st.CountByStatus[s])

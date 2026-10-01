@@ -144,8 +144,8 @@ func TestDispatchUsage(t *testing.T) {
 func TestInitAndSeed(t *testing.T) {
 	ta := newTestApp(t)
 	out := ta.mustRun(t, exitOK, "init")
-	if !strings.Contains(out, "schema v6") { // 版本號跟著 migration 數量走（v0.5 加 0006_node_types 後為 v6）
-		t.Errorf("init 輸出 = %q, want 含 schema v6", out)
+	if !strings.Contains(out, "schema v8") { // 版本號跟著 migration 數量走（新增 0008_status_archived 後為 v8）
+		t.Errorf("init 輸出 = %q, want 含 schema v8", out)
 	}
 	if _, err := filepath.Glob(ta.dbPath); err != nil {
 		t.Fatal(err)
@@ -307,6 +307,38 @@ func TestSearchCommand(t *testing.T) {
 	}
 	if code := ta.run("search"); code != exitUsage {
 		t.Errorf("缺 query code = %d", code)
+	}
+}
+
+// TestSearchCommandStatus：v0.3 的 --status（逗號多選）；單獨給 --status 就足夠（不再強制 query）。
+func TestSearchCommandStatus(t *testing.T) {
+	ta := newTestApp(t)
+	ta.setupTree(t)
+	ta.mustRun(t, exitOK, "assign", fxIssue, "xiaoxia")
+	ta.mustRun(t, exitOK, "move", fxIssue, "in_progress")
+
+	if out := ta.mustRun(t, exitOK, "search", "--status", "todo"); strings.Contains(out, fxIssue) {
+		t.Errorf("--status todo 不該含 in_progress 的 %s：%q", fxIssue, out)
+	}
+	if out := ta.mustRun(t, exitOK, "search", "--status", "in_progress"); !strings.Contains(out, fxIssue) {
+		t.Errorf("--status in_progress 應含 %s：%q", fxIssue, out)
+	}
+	// 「我的未結單」＝owner＋status 集合。
+	open := ta.mustRun(t, exitOK, "search", "--owner", "xiaoxia", "--status", "todo,in_progress,review,blocked")
+	if !strings.Contains(open, fxIssue) {
+		t.Errorf("owner＋status 未結單應含 %s：%q", fxIssue, open)
+	}
+	if out := ta.mustRun(t, exitOK, "search", "--status", "done"); !strings.Contains(out, "沒有命中") {
+		t.Errorf("--status done 應無命中：%q", out)
+	}
+	// 非法狀態＝用法錯誤（訊息列可用值）；空 --status 且無其他條件也一樣。
+	if code := ta.run("search", "--status", "nope"); code != exitUsage {
+		t.Errorf("非法 status code = %d, want %d；stderr=%s", code, exitUsage, ta.stderr())
+	} else if !strings.Contains(ta.stderr(), "未知狀態") {
+		t.Errorf("非法 status stderr = %q", ta.stderr())
+	}
+	if code := ta.run("search", "--status", ""); code != exitUsage {
+		t.Errorf("空 status 且無其他條件 code = %d, want %d", code, exitUsage)
 	}
 }
 

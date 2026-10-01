@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -114,11 +115,26 @@ func (s *storeSource) Stats(q url.Values) (json.RawMessage, error) {
 
 func (s *storeSource) Search(q url.Values) (json.RawMessage, error) {
 	query := strings.TrimSpace(q.Get("q"))
+	project := strings.TrimSpace(q.Get("project"))
+	tag := strings.TrimSpace(q.Get("tag"))
+	owner := strings.TrimSpace(q.Get("owner"))
+	status := strings.TrimSpace(q.Get("status"))
 	hits := make([]searchHit, 0)
-	if query == "" {
+
+	// 先驗 status：不合法一律 400，**即使沒有 q**。
+	// （2026-09-28 修 BUG-FIX2：舊版把驗證放在 query=="" 的短路之後，`?status=bogus` 會被 200 [] 吞掉。）
+	statuses, err := domain.ParseStatusList(status)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", web.ErrBadRequest, err)
+	}
+	// 條件規則對齊 CLI／MCP：q／project／tag／owner／status 至少一個；**全空才回 []**
+	// （保留 dashboard 搜尋框送出空字串時的舊行為——空查詢不是錯誤，是「沒有條件」）。
+	if query == "" && project == "" && tag == "" && owner == "" && status == "" {
 		return json.Marshal(hits)
 	}
-	nodes, err := s.st.Search(s.ctx(), query, q.Get("project"))
+	nodes, err := s.st.SearchFiltered(s.ctx(), store.SearchFilter{
+		Query: query, Project: project, Tag: tag, Owner: owner, Statuses: statuses,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -396,10 +412,10 @@ func toHistoryDTO(e domain.HistoryEntry) historyDTO {
 
 func statusCounts(m map[domain.Status]int) map[string]int {
 	out := make(map[string]int, len(m))
-	// 七種狀態一律給鍵（缺的補 0），讓 dashboard 頂列統計穩定。
+	// 八種狀態一律給鍵（缺的補 0），讓 dashboard 頂列統計穩定。
 	for _, s := range []domain.Status{
 		domain.StatusTodo, domain.StatusInProgress, domain.StatusReview, domain.StatusBlocked,
-		domain.StatusHold, domain.StatusDone, domain.StatusCancel,
+		domain.StatusHold, domain.StatusDone, domain.StatusCancel, domain.StatusArchived,
 	} {
 		out[string(s)] = 0
 	}

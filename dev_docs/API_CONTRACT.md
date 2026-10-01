@@ -45,7 +45,14 @@ const (
 	StatusHold       Status = "hold"
 	StatusDone       Status = "done"
 	StatusCancel     Status = "cancel"
+	StatusArchived   Status = "archived" // schema v8：done 驗證無誤後封存，見 DATA_MODEL.md §6
 )
+
+// v0.3：狀態名冊單一來源（CLI／MCP／HTTP 共用，避免各處各抄一份而漂移）。
+var AllStatuses = []Status{StatusTodo, StatusInProgress, StatusReview, StatusBlocked, StatusHold, StatusDone, StatusCancel, StatusArchived}
+func ParseStatusList(s string) ([]Status, error) // "todo, in_progress" → 多選；空字串→(nil,nil)；不合法→error
+func StatusNames() []string                     // AllStatuses 的字串形式（錯誤訊息／usage 用）
+func (s Status) IsKnown() bool                  // s ∈ AllStatuses
 
 type Priority string
 const (
@@ -201,6 +208,19 @@ func (s *Store) Verify(ctx context.Context, actor, id, note string) (domain.Node
 
 func (s *Store) Comment(ctx context.Context, actor, id, text string) error
 func (s *Store) Search(ctx context.Context, query, project string) ([]domain.Node, error)
+
+// SearchFilter／SearchFiltered：v0.3 平列多條件查詢（SearchAdvanced 的推廣版）。
+// 回扁平清單、**不補祖先**（Tree 會補父層，不適合當「我的未結單」）。
+// Statuses 空＝不過濾；非空＝只回這些狀態（SQL IN）。
+type SearchFilter struct {
+	Query, Project, Tag, Owner string
+	Statuses                   []domain.Status
+}
+func (s *Store) SearchFiltered(ctx context.Context, f SearchFilter) ([]domain.Node, error)
+
+// SearchAdvanced：v0.2 四參數簽名保留，內部＝SearchFiltered（Statuses 留空）。
+func (s *Store) SearchAdvanced(ctx context.Context, query, project, tag, owner string) ([]domain.Node, error)
+
 func (s *Store) History(ctx context.Context, id string, limit int) ([]domain.HistoryEntry, error)
 
 type Stats struct {
@@ -239,6 +259,7 @@ var (
 - `actor` 一律由呼叫端（CLI flag／MCP tool 參數）取得，`store` 函式**不會**去讀 env——`PB_ACTOR` 的 fallback 邏輯在 CLI／MCP 層做，`store` 只認呼叫時傳進來的字串。
 - 錯誤要能分辨種類（給正確的 exit code／MCP `isError`／REST status），所以三邊都用 `errors.Is(err, store.ErrXxx)` 判斷，**不要**比對錯誤訊息字串。
 - JSON 欄位命名、REST 路徑、MCP tool 參數名一律照 `../docs/INTERFACE.md` 現有表格，不要另外發明。
+- **REST `/api/search` 條件語意（2026-09-28，修 BUG-FIX2）**：參數 `q`／`project`／`tag`／`owner`／`status`，規則與 CLI／MCP **一致**——至少一個，**全空才回 `[]`**（保留 dashboard 搜尋框送出空字串的舊行為）；`status` 逗號多選且**先驗**，不合法一律 **400**，**即使沒有 `q`**（舊版把驗證放在 `q==""` 的短路之後，會被 200 `[]` 吞掉）。REST 以前不支援 `owner`／`tag`，現已對齊。
 
 ---
 
@@ -255,7 +276,7 @@ var (
    func (s *Store) RecentHistory(ctx context.Context, project string, limit int) ([]domain.HistoryEntry, error)
    ```
 
-3. **`Stats.CountByOwner` 語意澄清**：定義為「**目前未結案**張數」——即 `status` 不是 `done` 也不是 `cancel` 的節點才計入。這樣才對得上 dashboard「👤 每人手上張數」的字面意思（手上＝還沒收掉的），不是歷史總數。若已依「全狀態都算」寫好，請調整這一行的計數條件即可，其餘不受影響。
+3. **`Stats.CountByOwner` 語意澄清**：定義為「**目前未結案**張數」——即 `status` 不是 `done`、`cancel`、`archived`（schema v8 新增，`archived` 是 `done` 的封存態，待遇比照 `done`）的節點才計入。這樣才對得上 dashboard「👤 每人手上張數」的字面意思（手上＝還沒收掉的），不是歷史總數。若已依「全狀態都算」寫好，請調整這一行的計數條件即可，其餘不受影響。
 
 4. **`focus`（`blocked`／`awaiting_decision`／`recent`／`self_verified`）是 REST／dashboard 專屬的附加聚合**，不進核心 `Stats` struct（MCP `pb_stats`／CLI `stats` 維持原本四欄位精簡輸出）。`internal/httpapi` 組 `focus.blocked` 時：`Tree(status=blocked)` 取節點 → 逐一呼叫 `History(id, 1)` 找最近一筆 `action=transition, to_val=blocked` 的 `note` 當 reason，**不需要額外 Store 方法**。
 

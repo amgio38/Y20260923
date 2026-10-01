@@ -1,13 +1,56 @@
 # 建置產物
 /bin/
 /devserver
+/dist/
+*.test
+*.out
 
 # 執行期資料（真相源 DB 與匯出）
 /var/
+/tmp/
 
 # 本機自訂 owner 名冊（範本見 owners.example.txt，複製改名成這個檔）
 /owners.txt
 
+# 憑證與本機祕密：絕對不要 commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# 測試與覆蓋率產物
+coverage.out
+coverage.html
+*.log
+
 # 編輯器／OS
+.idea/
+.vscode/
+*.iml
 *.swp
+*.swo
+*~
 .DS_Store
+Thumbs.db
+Desktop.ini
+
+# 各人本機的 AI 工具狀態（不是專案的一部分）
+.claude/
+.cray/
+.cursor/
+.opencode/
+.codex/
+CLAUDE.local.md
+
+# 暫存檔
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Python 快取（skill/skill.py 做 py_compile 會生）
+__pycache__/
+*.pyc

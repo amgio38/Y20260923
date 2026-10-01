@@ -262,8 +262,8 @@ func TestStats(t *testing.T) {
 	var s statsDTO
 	decode(t, rr, &s)
 
-	if len(s.CountByStatus) != 7 {
-		t.Fatalf("count_by_status 應有 7 鍵: %+v", s.CountByStatus)
+	if len(s.CountByStatus) != 8 {
+		t.Fatalf("count_by_status 應有 8 鍵: %+v", s.CountByStatus)
 	}
 	if s.CountByStatus["done"] != 1 || s.CountByStatus["blocked"] != 1 || s.CountByStatus["cancel"] != 0 {
 		t.Fatalf("count_by_status = %+v", s.CountByStatus)
@@ -333,6 +333,77 @@ func TestSearch(t *testing.T) {
 	rr = doReq(h, http.MethodGet, "/api/search?q=zzznope")
 	if got := strings.TrimSpace(rr.Body.String()); got != "[]" {
 		t.Fatalf("無命中應回 [], got %q", got)
+	}
+
+	// v0.3：status 多選。fixture 的 issueA＝done → status=done 命中、status=todo 不命中。
+	rr = doReq(h, http.MethodGet, "/api/search?q=admin&status=done")
+	decode(t, rr, &hits)
+	found = false
+	for _, x := range hits {
+		if x.ID == issueA {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("status=done 應命中 A: %+v", hits)
+	}
+
+	rr = doReq(h, http.MethodGet, "/api/search?q=admin&status=todo,in_progress")
+	if got := strings.TrimSpace(rr.Body.String()); got != "[]" {
+		t.Fatalf("status=todo,in_progress 應回 [], got %q", got)
+	}
+
+	// 非法狀態 → 400（web.ErrBadRequest），不是 500。
+	if rr = doReq(h, http.MethodGet, "/api/search?q=admin&status=nope"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("非法 status = %d, want 400", rr.Code)
+	}
+}
+
+// TestSearchConditionsWithoutQuery：BUG-FIX2 —— 沒有 q 時不再短路：
+// status 先驗（非法→400）、支援 owner／tag、條件全空才回 []。
+func TestSearchConditionsWithoutQuery(t *testing.T) {
+	h := newTestHandler(t)
+
+	ids := func(rr *httptest.ResponseRecorder) []string {
+		t.Helper()
+		var hits []searchHit
+		decode(t, rr, &hits)
+		out := make([]string, 0, len(hits))
+		for _, x := range hits {
+			out = append(out, x.ID)
+		}
+		return out
+	}
+
+	// 1) 非法 status、且**沒有 q** → 400（舊版會在驗證前短路，回 200 []）。
+	if rr := doReq(h, http.MethodGet, "/api/search?status=bogus"); rr.Code != http.StatusBadRequest {
+		t.Fatalf("無 q 的非法 status = %d, want 400（body=%s）", rr.Code, rr.Body.String())
+	}
+
+	// 2) owner+status、沒有 q → 平列命中且**不帶祖先**（fixture：conc01＝xiaoxia／in_progress）。
+	if got := ids(doReq(h, http.MethodGet, "/api/search?owner=xiaoxia&status=in_progress")); len(got) != 1 || got[0] != conc01 {
+		t.Fatalf("owner+status = %v, want [%s]", got, conc01)
+	}
+
+	// 3) 「我的未結單」集合：issueA 已 done 不該出現；祖先 reqID／project 也不該被帶出。
+	if got := ids(doReq(h, http.MethodGet,
+		"/api/search?owner=xiaoxia&status=todo,in_progress,review,blocked")); len(got) != 1 || got[0] != conc01 {
+		t.Fatalf("未結單集合 = %v, want [%s]", got, conc01)
+	}
+
+	// 4) tag 單獨用（沒有 q）也通。
+	if got := ids(doReq(h, http.MethodGet, "/api/search?tag=ut90")); len(got) != 1 || got[0] != issueA {
+		t.Fatalf("tag-only = %v, want [%s]", got, issueA)
+	}
+
+	// 5) 條件全空 → []（dashboard 搜尋框送出空字串的舊行為要保留）。
+	if got := strings.TrimSpace(doReq(h, http.MethodGet, "/api/search").Body.String()); got != "[]" {
+		t.Fatalf("全空 = %q, want []", got)
+	}
+
+	// 6) project 單獨用（沒有 q）也通：只回該子樹、不帶祖先。
+	if got := ids(doReq(h, http.MethodGet, "/api/search?project="+reqID)); len(got) != 4 {
+		t.Fatalf("project-only（子樹 4 節點）= %v", got)
 	}
 }
 
@@ -461,10 +532,10 @@ func TestMeta(t *testing.T) {
 			t.Fatalf("owners[%d] = %q, want %q", i, m.Owners[i], o)
 		}
 	}
-	// statuses：7 筆顯示 metadata（V05-STATUS-META-API），值與 dashboard 舊 var STATUS
-	// 一字一致、依 sort 排序。
-	if len(m.Statuses) != 7 {
-		t.Fatalf("statuses len = %d, want 7: %+v", len(m.Statuses), m.Statuses)
+	// statuses：8 筆顯示 metadata（V05-STATUS-META-API＋REQ-ARCHIVED-DONE），值與 dashboard
+	// 舊 var STATUS 一字一致、依 sort 排序。
+	if len(m.Statuses) != 8 {
+		t.Fatalf("statuses len = %d, want 8: %+v", len(m.Statuses), m.Statuses)
 	}
 	wantStatuses := []metaStatusDTO{
 		{Key: "todo", Label: "未開始", Icon: "○", Color: "#5f6368", Sort: 1},
@@ -474,6 +545,7 @@ func TestMeta(t *testing.T) {
 		{Key: "hold", Label: "暫緩", Icon: "◌", Color: "#80868b", Sort: 5},
 		{Key: "done", Label: "完成", Icon: "✔", Color: "#188038", Sort: 6},
 		{Key: "cancel", Label: "不做", Icon: "✕", Color: "#9aa0a6", Sort: 7},
+		{Key: "archived", Label: "封存", Icon: "📦", Color: "#795548", Sort: 8},
 	}
 	for i, d := range m.Statuses {
 		if d != wantStatuses[i] {
@@ -575,9 +647,9 @@ func TestFormatTime(t *testing.T) {
 	}
 }
 
-func TestStatusCountsSeedsAllSeven(t *testing.T) {
+func TestStatusCountsSeedsAllEight(t *testing.T) {
 	out := statusCounts(map[domain.Status]int{domain.StatusDone: 3})
-	if len(out) != 7 || out["done"] != 3 || out["cancel"] != 0 {
+	if len(out) != 8 || out["done"] != 3 || out["cancel"] != 0 || out["archived"] != 0 {
 		t.Fatalf("statusCounts = %+v", out)
 	}
 }

@@ -989,8 +989,8 @@ func TestMetaAPI(t *testing.T) {
 	if len(m.Owners) != 7 {
 		t.Fatalf("owners = %+v", m.Owners)
 	}
-	// statuses：7 筆顯示 metadata（V05-STATUS-META-API），依 sort、值與舊 var STATUS 一致。
-	if len(m.Statuses) != 7 {
+	// statuses：8 筆顯示 metadata（V05-STATUS-META-API），依 sort、值與舊 var STATUS 一致。
+	if len(m.Statuses) != 8 {
 		t.Fatalf("statuses = %+v", m.Statuses)
 	}
 	for i, d := range m.Statuses {
@@ -1123,5 +1123,173 @@ func TestFixtureConsistency(t *testing.T) {
 				t.Errorf("node %s 缺少欄位 %q", id, k)
 			}
 		}
+	}
+}
+
+// TestDashboardReportNodes（F3）：report 節點在 dashboard 可見——
+// 詳情頁有「報告」區塊（列出直接子節點中 type=report），樹上報告預設收合在小徽章後、
+// 展開才顯示，且狀態篩選時報告跟著父節點顯示（不因報告本身是 done 被濾掉）。
+func TestDashboardReportNodes(t *testing.T) {
+	body := doReq(newTestHandler(t), http.MethodGet, "/").Body.String()
+
+	for _, want := range []string{
+		// 共用工具。
+		"function isReportNode(n)", "function reportChildren(node)",
+		"function nonReportChildren(node)", "function findNodeById(id)",
+		// 詳情頁「報告」區塊＋可點列（標題／owner／日期，點開載入全文）。
+		`"報告（"`, "function reportRow(child)",
+		`li.setAttribute("data-report-id", child.id)`,
+		"getJSON(\"/api/node/\" + child.id.split(\"/\").map(encodeURIComponent).join(\"/\"))",
+		`li.addEventListener("click", function () { selectNode(child.id); })`,
+		// 詳情的「子節點」不再混入報告（改走報告區塊）。
+		"var kids = nonReportChildren(node);",
+		// 樹上報告預設收合＋數量徽章；展開狀態獨立於一般子節點。
+		"state.expandedReports", `badge.textContent = "報告 " + reportKids.length`,
+		`badge.setAttribute("data-report-count", String(reportKids.length))`,
+		"if (reportKids.length && state.expandedReports[node.id])",
+		// 狀態篩選時報告跟著父節點顯示（filterType 明講才不塞）。
+		"if (!state.filterType) {",
+		"if (isReportNode(c) && !seen[c.id]) {",
+		// 選到報告時順手展開它的報告徽章。
+		"if (isReportNode(findNodeById(id)))",
+		// 樣式。
+		".tbadge", ".rrow .rtitle",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard.html 缺少 F3 報告節點元素 %q", want)
+		}
+	}
+}
+
+// TestReportChildInNodeAPI（F3）：/api/node/{id} 的子節點要含 type=report
+// （F3 判定＝前端問題，API 有回；這裡把資料來源釘住，避免日後後端改動回歸）。
+func TestReportChildInNodeAPI(t *testing.T) {
+	rr := doReq(newTestHandler(t), http.MethodGet, "/api/node/"+sampleNode)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d", rr.Code)
+	}
+	var node struct {
+		Children []struct {
+			ID   string `json:"id"`
+			Type string `json:"type"`
+		} `json:"children"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &node); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	found := false
+	for _, c := range node.Children {
+		if c.Type == "report" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("%s 的子節點應含 type=report，got %+v", sampleNode, node.Children)
+	}
+}
+
+// TestDashboardLiveSSE（F1）：dashboard 接 SSE 的接線——EventSource('/api/events')（全域訂閱，
+// 不帶 ?project=）、事件分派（判定表）、300ms debounce、去重、刪除事件語意、斷線重連 >30s
+// 整份重載、連線小燈，以及跨專案事件只更新 state.tree／動態列表、不擾動目前畫面的範圍判定。
+func TestDashboardLiveSSE(t *testing.T) {
+	body := doReq(newTestHandler(t), http.MethodGet, "/").Body.String()
+
+	for _, want := range []string{
+		// 連線與位址（全域訂閱：不帶 ?project=，只建一次；不引外部函式庫）。
+		"new EventSource(\"/api/events\")", "if (liveState.es) return;",
+		"function connectEvents()", `es.addEventListener("open"`, `es.addEventListener("error"`,
+		`es.addEventListener("node", onNodeEvent)`, `es.addEventListener("reset"`,
+		// 範圍判定：跨專案事件也收得到，但只有落在目前專案者才重繪畫面／閃爍。
+		"function nodeInScope(nodeID)", "if (!nodeInScope(id)) return;",
+		"if (!nodeInScope(ev.node_id || victim)) return;",
+		// 事件分派（判定表）。
+		"function onNodeEvent(e)",
+		`case "delete":`, `case "comment": case "link": case "unlink": case "hook": case "unhook":`,
+		`case "create": case "update": case "transition": case "verify": case "assign":`,
+		"console.debug(\"pb live：未知 action，忽略\"",
+		// 300ms debounce 合併同 node 的多筆事件。
+		"function scheduleNodeRefresh(ev)", "}, 300);",
+		// 只重抓那一個節點、不重抓整棵樹。
+		"function refreshNode(ev)", `getJSON("/api/node/" + encodePath(id))`,
+		"function applyNode(node, ev)", "function renderTreePreserveScroll()",
+		// 事件 id 去重。
+		"liveState.lastId", "if (id && id <= liveState.lastId) return;",
+		// 詳情即時更新（正在看被改的節點時）。
+		"if (state.selected === id) loadDetail(id);",
+		"if (state.selected && state.selected === ev.node_id) loadDetail(state.selected);",
+		// 刪除事件語意（CTO 2026-09-25）：node_id=父、from=被刪 id → 移除 from、選回父。
+		"function applyDelete(ev)", "var victim = ev.from;",
+		"loc.parent.children.splice(loc.index, 1)", "state.tree.splice(loc.index, 1)",
+		// 斷線：自動重連，>30 秒整份重載。
+		"liveState.downSince", "Date.now() - liveState.downSince > 30000",
+		"function resyncAll()",
+		// 連線狀態小燈。
+		`id="live-status"`, "function setLiveStatus(on)", "即時 ",
+		// 換專案／上一頁要跟著換即時通道。
+		"connectEvents();",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard.html 缺少 F1 即時更新元素 %q", want)
+		}
+	}
+
+	// 連線小燈樣式（綠＝on／灰＝off）與不引框架。
+	if !strings.Contains(body, ".live-status.on .live-dot") {
+		t.Error("缺少連線小燈的 on 樣式")
+	}
+	for _, bad := range []string{"WebSocket", "socket.io", "https://", "http://"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("F1 不應引入 %q", bad)
+		}
+	}
+}
+
+// TestDashboardFlashAndFeed（F2）：變動格＋父層鏈閃爍（純 CSS keyframes）、reduced-motion
+// 靜態外框、右下角「即時動態」列表（最多 50 筆、可收合成小圓鈕、未讀數上分頁標題）、
+// 動作白話對照表，以及 P3（初次載入期間事件先暫存、載完重播）。
+func TestDashboardFlashAndFeed(t *testing.T) {
+	body := doReq(newTestHandler(t), http.MethodGet, "/").Body.String()
+
+	for _, want := range []string{
+		// 閃爍：只用 CSS keyframes，JS 只加／移除 class；變動格強、父層鏈淡。
+		"@keyframes pb-flash-strong", "@keyframes pb-flash-soft",
+		".pb-flash { animation: pb-flash-strong 1.2s", ".pb-flash-parent { animation: pb-flash-soft 1.2s",
+		"--flash:", "--flash-parent:",
+		"@media (prefers-reduced-motion: reduce)",
+		"function flashElement(elm, strong)", "void elm.offsetWidth", "elm._pbFlashTimer",
+		"function flashChange(ev)", "if (document.hidden) return;", "80 * k",
+		"function rowForNode(id)", "data-node-id",
+		// 即時動態列表：時間｜actor 中文名｜單號短名｜動作白話；最多 50 筆；可收合。
+		"function actorName(a)", "ACTOR_NAMES",
+		"function nodeShortID(id)", "function actionText(ev)",
+		"轉成 ", "驗收通過", "新增留言", "掛了連結", "移除連結", "刪除了", "改了標題",
+		"default: return ev.action || \"事件\";",
+		"function addFeed(ev)", "FEED_MAX = 50", "feedState.unread",
+		`document.title = feedState.unread ? "(" + feedState.unread + ") ProjectBoard" : "ProjectBoard"`,
+		// 跨專案動態：加來源專案小標籤（foreign），點一下先切到該專案再選節點。
+		`li.className += " foreign";`, `el("span", "proj", projectOf(jumpID))`,
+		".feed-item .proj {", ".feed-item.foreign .nid {",
+		`resyncAll().then(function () { selectNode(jumpID); });`,
+		`id="feed"`, `id="feed-toggle"`, `id="feed-bubble"`,
+		"function feedSetCollapsed(collapsed)", `FEED_KEY = "pb-feed-collapsed"`, "localStorage.setItem(FEED_KEY",
+		`document.addEventListener("visibilitychange"`,
+		// 迴歸鎖定（BUG-FEED-UNREAD-RESET-ON-VISIBILITY）：回到前景清零必須同時要求面板已展開
+		// （!feedState.collapsed），與 addFeed 的累加條件（背景或收合）對稱——只檢查 !document.hidden
+		// 會在面板仍收合時把使用者還沒看到的未讀清成 0。
+		`if (!document.hidden && !feedState.collapsed) { feedState.unread = 0; feedUpdateBadges(); }`,
+		// P3：先連線、載入期間事件先暫存、載完依序重播。
+		"liveState.ready", "liveState.buffer", "function liveReady()",
+		"if (!liveState.ready) { liveState.buffer.push(ev); return; }",
+		// 先連線再載資料（loadAll 內）。
+		"// P3：先連上即時通道",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("dashboard.html 缺少 F2 元素 %q", want)
+		}
+	}
+
+	// 連線先於載入：loadAll 內 connectEvents() 要出現在讀取 tree 之前。
+	if i, j := strings.Index(body, "function loadAll()"), strings.Index(body, "// P3：先連上即時通道"); i < 0 || j < 0 || j < i {
+		t.Error("loadAll 應先 connectEvents() 再載資料（P3）")
 	}
 }

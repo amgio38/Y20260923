@@ -24,17 +24,30 @@ const ftsMinRunes = 3
 // 特殊字元（" - * : ^ ( ) 等）當成運算子。內部的雙引號依 FTS5 規則寫成兩個雙引號。
 func ftsPhrase(q string) string { return `"` + strings.ReplaceAll(q, `"`, `""`) + `"` }
 
-// SearchAdvanced：v0.2 全文搜尋（FTS5 ＋ trigram tokenizer；Y20260920/REQ-V02-FTS 裁示）。
+// SearchFilter 是 SearchFiltered 的查詢條件；零值（全空）＝回全部節點。
 //
-//   - query：走 nodes_fts（title／body／tags）子字串比對；空字串＝不比對關鍵字。
-//   - project：非空時只搜該專案子樹（路徑式 id：project 本身或其 project/ 前綴）。
-//   - tag：tags 是逗號分隔欄位，這裡是**整段相符**（不是子字串）；"v0.2" 不會命中 "v0.21"。
-//   - owner：全等。
+//   - Query：走 nodes_fts（title／body／tags）子字串比對；空字串＝不比對關鍵字。
+//   - Project：非空時只搜該專案子樹（路徑式 id：project 本身或其 project/ 前綴）。
+//   - Tag：tags 是逗號分隔欄位，這裡是**整段相符**（不是子字串）；"v0.2" 不會命中 "v0.21"。
+//   - Owner：全等。
+//   - Statuses：非空時只回這些狀態（多選）。「我的未結單」＝Owner＋Statuses{todo,in_progress,review,blocked}。
+type SearchFilter struct {
+	Query    string
+	Project  string
+	Tag      string
+	Owner    string
+	Statuses []domain.Status
+}
+
+// SearchFiltered：平列（flat）多條件查詢，v0.3 在 SearchAdvanced 的基礎上加 status 多選。
 //
-// 四個參數全空＝回全部節點（沿用 v0.1 `Search("", "")` 的行為）。
+// 關鍵差異（選它而不是 Tree）：回**扁平清單、不補祖先**——Tree 為了畫樹會把命中節點的
+// 父層一起帶出，拿來當「我的未結單」會混進別人的 project／req。這裡只回真正命中的節點。
+//
 // 少於 3 字元的 query 沒有 trigram 可用，退回 LIKE（與 v0.1 相同語意），
 // 讓「中文兩字詞也查得到」這件事不會因為換索引而退步。
-func (s *Store) SearchAdvanced(ctx context.Context, query, project, tag, owner string) ([]domain.Node, error) {
+func (s *Store) SearchFiltered(ctx context.Context, f SearchFilter) ([]domain.Node, error) {
+	query, project, tag, owner := f.Query, f.Project, f.Tag, f.Owner
 	q := "SELECT " + nodeCols + " FROM nodes n"
 	var where []string
 	var args []any
@@ -64,6 +77,14 @@ func (s *Store) SearchAdvanced(ctx context.Context, query, project, tag, owner s
 			args = append(args, ftsPhrase(query))
 		}
 	}
+	if len(f.Statuses) > 0 {
+		ph := make([]string, len(f.Statuses))
+		for i, st := range f.Statuses {
+			ph[i] = "?"
+			args = append(args, string(st))
+		}
+		where = append(where, "n.status IN ("+strings.Join(ph, ", ")+")")
+	}
 	if len(where) > 0 {
 		q += " WHERE " + strings.Join(where, " AND ")
 	}
@@ -86,6 +107,12 @@ func (s *Store) SearchAdvanced(ctx context.Context, query, project, tag, owner s
 		return nil, fmt.Errorf("search: %w", err)
 	}
 	return out, nil
+}
+
+// SearchAdvanced：v0.2 的四參數簽名保留（既有呼叫端不用改都能編譯），
+// 內部改走 SearchFiltered（Statuses 留空＝不過濾，語意與 v0.2 相同）。
+func (s *Store) SearchAdvanced(ctx context.Context, query, project, tag, owner string) ([]domain.Node, error) {
+	return s.SearchFiltered(ctx, SearchFilter{Query: query, Project: project, Tag: tag, Owner: owner})
 }
 
 // Search：v0.1 簽名保留（呼叫端先不用改也能編譯），內部改走 SearchAdvanced。
@@ -161,13 +188,69 @@ func (s *Store) RecentHistory(ctx context.Context, project string, limit int) ([
 	return scanHistoryRows(rows, "recent")
 }
 
+// HistorySince：讀 id > since 的 history（升冪，id 序＝寫入序），limit <= 0 代表不限。
+// 供即時推送的 broadcaster 追新紀錄用（Y20260920/REQ-DASHBOARD-LIVE-UPDATES/B2）：
+// 純唯讀、不持有寫鎖，CLI／MCP 等別的 process 寫進來的也讀得到。
+func (s *Store) HistorySince(ctx context.Context, since int64, limit int) ([]domain.HistoryEntry, error) {
+	q := "SELECT " + historyCols + " FROM history h WHERE h.id > ? ORDER BY h.id"
+	args := []any{since}
+	if limit > 0 {
+		q += " LIMIT ?"
+		args = append(args, limit)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("history since %d: %w", since, err)
+	}
+	return scanHistoryRows(rows, fmt.Sprintf("since %d", since))
+}
+
+// MaxHistoryID：history 目前最大 id（空表＝0）。供 SSE 決定「從現在開始」的起點。
+func (s *Store) MaxHistoryID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(id), 0) FROM history").Scan(&id); err != nil {
+		return 0, fmt.Errorf("max history id: %w", err)
+	}
+	return id, nil
+}
+
+// NodesByID：批次取節點（id → Node），不存在的不在 map 裡。
+// 供 SSE 一次補齊多筆事件的 node_type／parent_id／ancestors，避免每筆一次查詢。
+func (s *Store) NodesByID(ctx context.Context, ids []string) (map[string]domain.Node, error) {
+	out := make(map[string]domain.Node, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		args[i] = id
+	}
+	rows, err := s.db.QueryContext(ctx, "SELECT "+nodeCols+" FROM nodes WHERE id IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("nodes by id: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		n, err := scanNode(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[n.ID] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("nodes by id: %w", err)
+	}
+	return out, nil
+}
+
 // SelfVerifiedHistory：窮舉(不是掃最近N筆)所有「actor==owner、目前status=done」的verify事件，
 // 每個node_id只留最新一筆。跟 StatsAt 的 self_verified_count 用同一條WHERE，數字才會跟
 // 這裡列出來的清單對得上——RecentHistory是有limit的視窗，節點多的專案舊事件會被擠出視窗外，
 // 導致「⚠自我驗收 共N張」的標題數字對，底下卻列不出東西（Y20260916 撞過這個bug）。
 func (s *Store) SelfVerifiedHistory(ctx context.Context, project string) ([]domain.HistoryEntry, error) {
 	q := `SELECT ` + historyCols + ` FROM history h JOIN nodes n ON n.id = h.node_id
-	      WHERE h.action = 'verify' AND h.note LIKE '[self-verified]%' AND n.status = 'done'`
+	      WHERE h.action = 'verify' AND h.note LIKE '[self-verified]%' AND n.status IN ('done','archived')`
 	args := []any{}
 	if project != "" {
 		q += " AND (n.id = ? OR n.id LIKE ? ESCAPE '\\')"
@@ -238,8 +321,9 @@ func (s *Store) StatsAt(ctx context.Context, project string, now time.Time) (Sta
 			continue
 		}
 		st.CountByStatus[n.Status]++
-		// CountByOwner＝手上未結案張數（done／cancel 不算；API_CONTRACT.md §5-3）
-		if n.Status != domain.StatusDone && n.Status != domain.StatusCancel {
+		// CountByOwner＝手上未結案張數（done／cancel／archived 不算；API_CONTRACT.md §5-3。
+		// archived 是 done 的封存態，跟 done 一樣不算未結案）
+		if n.Status != domain.StatusDone && n.Status != domain.StatusCancel && n.Status != domain.StatusArchived {
 			st.CountByOwner[n.Owner]++
 			dwellSum[n.Owner] += now.Sub(n.CreatedAt).Hours() / 24
 			dwellCnt[n.Owner]++
@@ -264,7 +348,8 @@ func (s *Store) StatsAt(ctx context.Context, project string, now time.Time) (Sta
 				continue
 			}
 			total++
-			if d.Status == domain.StatusDone {
+			// archived 是 done 的封存態，完成度計算把它當 done 算，不能因為封存反而漏算
+			if d.Status == domain.StatusDone || d.Status == domain.StatusArchived {
 				done++
 			}
 		}
@@ -272,14 +357,15 @@ func (s *Store) StatsAt(ctx context.Context, project string, now time.Time) (Sta
 		switch {
 		case total > 0:
 			progress = float64(done) / float64(total)
-		case n.Status == domain.StatusDone:
+		case n.Status == domain.StatusDone || n.Status == domain.StatusArchived:
 			progress = 1.0
 		}
 		st.ReqProgress[n.ID] = progress
 	}
-	// 自我驗收張數：目前 status=done、且該節點有 verify 事件帶 [self-verified] 前綴（§11.2）。
+	// 自我驗收張數：目前 status=done 或 archived（archived 是 done 的封存態，稽核數字不能因為
+	// 封存就消失），且該節點有 verify 事件帶 [self-verified] 前綴（§11.2）。
 	q := `SELECT COUNT(DISTINCT h.node_id) FROM history h JOIN nodes n ON n.id = h.node_id
-	      WHERE h.action = 'verify' AND h.note LIKE '[self-verified]%' AND n.status = 'done'`
+	      WHERE h.action = 'verify' AND h.note LIKE '[self-verified]%' AND n.status IN ('done','archived')`
 	qargs := []any{}
 	if project != "" {
 		q += " AND (n.id = ? OR n.id LIKE ? ESCAPE '\\')"

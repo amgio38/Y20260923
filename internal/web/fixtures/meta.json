@@ -16,7 +16,8 @@
     {"key": "blocked", "label": "卡住", "icon": "●", "color": "#d93025", "sort": 4},
     {"key": "hold", "label": "暫緩", "icon": "◌", "color": "#80868b", "sort": 5},
     {"key": "done", "label": "完成", "icon": "✔", "color": "#188038", "sort": 6},
-    {"key": "cancel", "label": "不做", "icon": "✕", "color": "#9aa0a6", "sort": 7}
+    {"key": "cancel", "label": "不做", "icon": "✕", "color": "#9aa0a6", "sort": 7},
+    {"key": "archived", "label": "封存", "icon": "📦", "color": "#795548", "sort": 8}
   ],
   "tabs": [
     {"key": "focus", "label": "焦點", "sort": 1},

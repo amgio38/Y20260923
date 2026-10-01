@@ -22,7 +22,17 @@ import (
 // New 依契約回傳掛好 REST ＋ dashboard 的 handler。
 //
 // 內部把 store 接到 web.Source（storeSource），再交給 web.NewHandler 統一
-// 處理路由與 404／500 對映。
+// 處理路由與 404／500 對映；另外把 `/api/events`（SSE 即時推送）掛在更精確的
+// pattern 上，其餘一律交給 dashboard handler。
 func New(st *store.Store) http.Handler {
-	return web.NewHandler(newSource(st))
+	return NewWithBroadcaster(st, NewBroadcaster(st))
+}
+
+// NewWithBroadcaster：`New` 的可注入版本（測試用短輪詢間隔的 broadcaster）。
+// 契約簽名 `New(st)` 不變；這是附加入口。
+func NewWithBroadcaster(st *store.Store, b *Broadcaster) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/api/events", b)
+	mux.Handle("/", web.NewHandler(newSource(st)))
+	return mux
 }

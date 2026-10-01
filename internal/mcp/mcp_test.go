@@ -502,6 +502,58 @@ func TestWriteTools(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// TestSearchStatusFilter：v0.3 的 pb_search status 多選——「我的未結單」＝owner＋status 集合。
+func TestSearchStatusFilter(t *testing.T) {
+	srv := newTestServer(t)
+	mustCall(t, srv, 1, "pb_create", map[string]any{"actor": "human", "type": "project", "id": "Y20260930", "title": "p"})
+	mustCall(t, srv, 2, "pb_create", map[string]any{"actor": "human", "type": "issue",
+		"parent_id": "Y20260930", "id": "Y20260930/ISSUE-A", "title": "a", "owner": "xiaoxia"})
+	mustCall(t, srv, 3, "pb_create", map[string]any{"actor": "human", "type": "issue",
+		"parent_id": "Y20260930", "id": "Y20260930/ISSUE-B", "title": "b", "owner": "xiaoxia"})
+	mustCall(t, srv, 4, "pb_transition", map[string]any{"actor": "human", "id": "Y20260930/ISSUE-B", "to": "in_progress"})
+	mustCall(t, srv, 5, "pb_transition", map[string]any{"actor": "human", "id": "Y20260930/ISSUE-A", "to": "in_progress"})
+	mustCall(t, srv, 6, "pb_transition", map[string]any{"actor": "human", "id": "Y20260930/ISSUE-A", "to": "review"})
+
+	ids := func(v any) map[string]bool {
+		t.Helper()
+		arr, ok := v.([]any)
+		if !ok {
+			t.Fatalf("預期陣列，卻是：%v", v)
+		}
+		out := map[string]bool{}
+		for _, e := range arr {
+			m, ok := e.(map[string]any)
+			if !ok {
+				t.Fatalf("陣列元素不是物件：%v", e)
+			}
+			out[m["id"].(string)] = true
+		}
+		return out
+	}
+
+	// A=review、B=in_progress → 未結案集合兩者都中。
+	got := ids(mustCall(t, srv, 10, "pb_search", map[string]any{
+		"owner": "xiaoxia", "status": "todo,in_progress,review,blocked"}))
+	if !got["Y20260930/ISSUE-A"] || !got["Y20260930/ISSUE-B"] {
+		t.Fatalf("未結案集合應含 A、B：%v", got)
+	}
+	// 只給 todo → 兩張 issue 皆非 todo；專案節點預設 todo 仍會中（不帶 owner 過濾時）。
+	if got = ids(mustCall(t, srv, 11, "pb_search", map[string]any{"status": "todo"})); got["Y20260930/ISSUE-A"] || got["Y20260930/ISSUE-B"] {
+		t.Fatalf("status=todo 不該命中 A／B：%v", got)
+	}
+	// 只給 process 中 → 只有 B。
+	if got = ids(mustCall(t, srv, 12, "pb_search", map[string]any{"status": "in_progress"})); !got["Y20260930/ISSUE-B"] || got["Y20260930/ISSUE-A"] {
+		t.Fatalf("status=in_progress 應只命中 B：%v", got)
+	}
+	// status 也算「至少一個」條件（其他四個全空也不再報錯）。
+	if got = ids(mustCall(t, srv, 13, "pb_search", map[string]any{"status": "review"})); !got["Y20260930/ISSUE-A"] {
+		t.Fatalf("status=review 應命中 A：%v", got)
+	}
+	// 非法狀態 → isError，訊息含「未知狀態」。
+	errCall(t, srv, 14, "pb_search", map[string]any{"status": "nope"}, "未知狀態")
+	errCall(t, srv, 15, "pb_search", map[string]any{"status": "todo,oops"}, "未知狀態")
+}
+
 // v0.2：pb_search 走 SearchAdvanced（query 可省略、四者至少一、只回精簡欄位）＋
 // pb_deps（ListDependsOn）＋ pb_tree 的 tag 子字串過濾。
 // ---------------------------------------------------------------------------

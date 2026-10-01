@@ -472,6 +472,51 @@ func TestTransitionLifecycleAndHistory(t *testing.T) {
 	}
 }
 
+// TestTransitionArchiveLifecycle：done → archived 要 note；archived → done（unarchive）免 note；
+// 其他方向一律非法（不能跳過 done 直接封存、封存後不能直接跳去別的狀態）。
+func TestTransitionArchiveLifecycle(t *testing.T) {
+	s := newStore(t)
+	bg := context.Background()
+	_, _, issue := fixtureTree(t, s)
+
+	// 還沒到 done：不能直接封存
+	if _, err := s.Transition(bg, "xiaoxia", issue.ID, domain.StatusArchived, "", nil); !errors.Is(err, domain.ErrIllegalTransition) {
+		t.Fatalf("todo → archived err = %v, want ErrIllegalTransition", err)
+	}
+
+	mustTransition(t, s, "xiaoxia", issue.ID, domain.StatusInProgress, "")
+	mustTransition(t, s, "xiaoxia", issue.ID, domain.StatusReview, "")
+	mustTransition(t, s, "claude", issue.ID, domain.StatusDone, "看過了")
+
+	// done → archived 沒帶 note 應回錯，且不改狀態、不留 history
+	before := len(mustHistory(t, s, issue.ID, 0))
+	if _, err := s.Transition(bg, "claude", issue.ID, domain.StatusArchived, "  ", nil); err == nil {
+		t.Error("封存沒帶 note 應回錯")
+	}
+	if n, _, _, _ := s.Get(bg, issue.ID); n.Status != domain.StatusDone {
+		t.Error("封存失敗不應改狀態")
+	}
+	if after := len(mustHistory(t, s, issue.ID, 0)); after != before {
+		t.Error("封存失敗不應留 history")
+	}
+
+	archived := mustTransition(t, s, "claude", issue.ID, domain.StatusArchived, "驗證無誤，封存")
+	if archived.Status != domain.StatusArchived {
+		t.Fatalf("封存後 status = %s", archived.Status)
+	}
+
+	// archived 只能轉回 done，其他方向一律非法
+	if _, err := s.Transition(bg, "xiaoxia", issue.ID, domain.StatusInProgress, "", nil); !errors.Is(err, domain.ErrIllegalTransition) {
+		t.Fatalf("archived → in_progress err = %v, want ErrIllegalTransition", err)
+	}
+
+	// archived → done（unarchive）免 note
+	back := mustTransition(t, s, "claude", issue.ID, domain.StatusDone, "")
+	if back.Status != domain.StatusDone {
+		t.Fatalf("unarchive 後 status = %s", back.Status)
+	}
+}
+
 func TestTransitionRejectsIllegal(t *testing.T) {
 	s := newStore(t)
 	bg := context.Background()
@@ -740,11 +785,13 @@ func TestDelete(t *testing.T) {
 		t.Error("刪除後不應取得節點")
 	}
 
-	// report 即使有 link 也可刪，且 links／history 依 CASCADE 清掉
+	// report 即使有 link 也可刪：links／report 自己的 history 依 CASCADE 清掉；
+	// delete 事件改記在存活的 parent（issue）上（CTO 2026-09-25 裁定 a）。
 	rep := mustCreate(t, s, "human", CreateInput{
 		Type: domain.TypeReport, ParentID: issue.ID, Title: "r", Owner: "xiaoxia",
 	})
 	mustLink(t, s, "xiaoxia", rep.ID, domain.LinkFile, "dev_docs/x.md", "")
+	parentHistBefore := len(mustHistory(t, s, issue.ID, 0))
 	if err := s.Delete(bg, "human", rep.ID); err != nil {
 		t.Fatalf("report 應可刪: %v", err)
 	}
@@ -757,6 +804,37 @@ func TestDelete(t *testing.T) {
 		if n != 0 {
 			t.Errorf("%s 應隨節點刪除清空（CASCADE），剩 %d 筆", tc.table, n)
 		}
+	}
+	// parent 多一筆 delete：field=child、from=被刪 id、to=''、note=type|title。
+	parentHist := mustHistory(t, s, issue.ID, 0)
+	if len(parentHist) != parentHistBefore+1 {
+		t.Fatalf("parent history = %d, want %d", len(parentHist), parentHistBefore+1)
+	}
+	if h := parentHist[0]; h.Action != actionDelete || h.Field != "child" ||
+		h.FromVal != rep.ID || h.ToVal != "" || h.Note != "report|r" {
+		t.Errorf("delete history = %+v", h)
+	}
+
+	// report 有子節點 → 拒（不是撞 parent_id FK 的原始錯誤），且節點保留
+	rep2 := mustCreate(t, s, "human", CreateInput{
+		Type: domain.TypeReport, ParentID: issue.ID, Title: "r2", Owner: "kaimake",
+	})
+	mustCreate(t, s, "human", CreateInput{
+		Type: domain.TypeReport, ParentID: rep2.ID, Title: "r2-child", Owner: "xiaoxia",
+	})
+	if err := s.Delete(bg, "human", rep2.ID); !errors.Is(err, ErrCannotDelete) {
+		t.Fatalf("有子節點的 report err = %v, want ErrCannotDelete", err)
+	}
+	if _, _, _, err := s.Get(bg, rep2.ID); err != nil {
+		t.Errorf("被拒的 report 應仍存在: %v", err)
+	}
+	// report 被 depends_on 指到 → 拒
+	rep3 := mustCreate(t, s, "human", CreateInput{
+		Type: domain.TypeReport, ParentID: issue.ID, Title: "r3", Owner: "yilong",
+	})
+	mustLink(t, s, "human", dep.ID, domain.LinkDependsOn, rep3.ID, "")
+	if err := s.Delete(bg, "human", rep3.ID); !errors.Is(err, ErrCannotDelete) {
+		t.Fatalf("被 depends_on 指到的 report err = %v, want ErrCannotDelete", err)
 	}
 
 	// 不存在

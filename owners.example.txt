@@ -1,7 +1,15 @@
 # 每行一個 owner 代號，# 開頭是註解、空行忽略。
-# 複製這份檔案成 owners.txt（跟 pb 執行檔同一個工作目錄，或用 PB_OWNERS_FILE
-# 環境變數指定路徑），改成你自己團隊的名字，不用重編、不用改任何原始碼。
-# 沒有 owners.txt、也沒設 PB_OWNERS 環境變數時，系統只認 "unassigned" 一個值。
+# 複製這份檔案成 owners.txt，改成你自己團隊的名字，不用重編、不用改任何原始碼。
+# 找不到 owners.txt、也沒設環境變數時，系統只認 "unassigned" 一個值。
+#
+# pb 載入名冊的順序（先讀到的贏）：
+#   1. 環境變數 PB_OWNERS（逗號分隔，如 "alice,bob,human,unassigned"）
+#   2. 環境變數 PB_OWNERS_FILE 指定的檔案路徑
+#   3. 行程工作目錄（cwd）下的 owners.txt
+#   4. pb 執行檔所屬專案根下的 owners.txt（執行檔在 <root>/bin/ 且 <root>/go.mod 存在時）
+# 第 4 層是給「各 harness 的 pb mcp cwd 不在本專案」用的——owners.txt 放在 repo 根目錄
+# （跟 go.mod 同層）就會被自動讀到，不必在每個 harness 設定檔各塞一次 PB_OWNERS_FILE。
+# 實際採用的來源：pb serve／pb mcp 啟動時印在 stderr（owners：N 名（來源：…））。
 program1
 program2
 program3

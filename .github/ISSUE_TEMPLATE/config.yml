@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 回報安全漏洞（私下）
+    url: https://github.com/amgio38/Y20260923/security/advisories/new
+    about: 安全問題請不要開公開 issue，用這裡私下回報。
+  - name: 使用問題
+    url: https://github.com/amgio38/Y20260923/blob/main/README.md
+    about: 安裝、啟動、MCP 設定、owner 名冊，先看 README。

@@ -111,6 +111,11 @@ func insertHistory(ctx context.Context, tx *sql.Tx, ts time.Time, e historyEntry
 // fieldChange 供 Update 逐欄位寫 history。
 type fieldChange struct{ field, from, to string }
 
+// actionDelete 是 history.action 的刪除事件（migration 0007 放寬 CHECK 後才寫得進去）。
+// domain 的 HistoryAction 常數清單未收此值（CTO 2026-09-25 裁定只准動 store／httpapi／cmd），
+// 故沿用 store 端常數，不擴充 domain。
+const actionDelete domain.HistoryAction = "delete"
+
 func (s *Store) allNodes(ctx context.Context) ([]domain.Node, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT "+nodeCols+" FROM nodes ORDER BY id")
 	if err != nil {
@@ -585,6 +590,9 @@ func (s *Store) Transition(ctx context.Context, actor, id string, to domain.Stat
 		if from == domain.StatusDone && to == domain.StatusInProgress && strings.TrimSpace(note) == "" {
 			return fmt.Errorf("node %q: reopen (done → in_progress) requires note", id)
 		}
+		if from == domain.StatusDone && to == domain.StatusArchived && strings.TrimSpace(note) == "" {
+			return fmt.Errorf("node %q: archive (done → archived) requires note", id)
+		}
 		now := nowSec()
 		if _, err := tx.ExecContext(ctx,
 			"UPDATE nodes SET status = ?, updated_at = ? WHERE id = ?", string(to), formatTime(now), id); err != nil {
@@ -709,10 +717,12 @@ func (s *Store) Comment(ctx context.Context, actor, id, text string) error {
 	})
 }
 
-// Delete：僅 report 或「無子節點且無 link」的節點可刪，否則回 ErrCannotDelete。
+// Delete：節點須無子節點、未被 depends_on 指到；非 report 另須無出向 link，否則回 ErrCannotDelete。
 //
-// 註：節點刪除後，其 history／出向 links 依 DATA_MODEL.md §2/§4 的 ON DELETE CASCADE 一併移除
-// （DDL 為權威）。節點已不存在，故刪除本身不留 history；要留痕需改軟刪（v0.2）。
+// 註：節點刪除後，其自身的 history／出向 links 依 DATA_MODEL.md §2/§4 的 ON DELETE CASCADE
+// 一併移除（DDL 為權威）。因此 delete 事件**不寫在被刪節點上**（會被同一交易的 CASCADE 吃掉），
+// 改記在還存在的最近祖先：node_id=<存活的 parent>、field=child、from=<被刪 id>、to=”、
+// note=<type>|<title>（CTO 2026-09-25 裁定 a）。沒有 parent 的根節點被刪時不留痕（已知限制）。
 // 「被 depends_on 指到」的節點也視為有 link 而不可刪，避免卡點清單指向已刪節點（§11.4 精神）。
 func (s *Store) Delete(ctx context.Context, actor, id string) error {
 	if err := validateActor(actor); err != nil {
@@ -723,23 +733,32 @@ func (s *Store) Delete(ctx context.Context, actor, id string) error {
 		if err != nil {
 			return err
 		}
+		// report 只豁免「有出向 link」（它的 file/commit link 隨 CASCADE 清掉即可）；
+		// 有子節點（parent_id RESTRICT 會撞 FK）或被 depends_on 指到，report 一樣不可刪。
+		checks := []string{
+			"SELECT COUNT(*) FROM nodes WHERE parent_id = ?",
+			"SELECT COUNT(*) FROM links WHERE kind = 'depends_on' AND target = ?",
+		}
 		if cur.Type != domain.TypeReport {
-			counts := []struct {
-				query string
-				arg   string
-			}{
-				{"SELECT COUNT(*) FROM nodes WHERE parent_id = ?", id},
-				{"SELECT COUNT(*) FROM links WHERE from_id = ?", id},
-				{"SELECT COUNT(*) FROM links WHERE kind = 'depends_on' AND target = ?", id},
+			checks = append(checks, "SELECT COUNT(*) FROM links WHERE from_id = ?")
+		}
+		for _, q := range checks {
+			var n int
+			if err := tx.QueryRowContext(ctx, q, id).Scan(&n); err != nil {
+				return fmt.Errorf("delete check %q: %w", id, err)
 			}
-			for _, c := range counts {
-				var n int
-				if err := tx.QueryRowContext(ctx, c.query, c.arg).Scan(&n); err != nil {
-					return fmt.Errorf("delete check %q: %w", id, err)
-				}
-				if n > 0 {
-					return fmt.Errorf("node %q: %w", id, ErrCannotDelete)
-				}
+			if n > 0 {
+				return fmt.Errorf("node %q: %w", id, ErrCannotDelete)
+			}
+		}
+		// delete 事件記在存活的 parent 上（見函式註解）；沒有 parent 的根節點不寫。
+		if cur.ParentID != "" {
+			if err := insertHistory(ctx, tx, nowSec(), historyEntry{
+				nodeID: cur.ParentID, actor: actor, action: actionDelete,
+				field: "child", from: cur.ID,
+				note: string(cur.Type) + "|" + cur.Title,
+			}); err != nil {
+				return err
 			}
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM nodes WHERE id = ?", id); err != nil {

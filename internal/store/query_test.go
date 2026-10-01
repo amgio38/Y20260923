@@ -195,6 +195,47 @@ func TestStatsReqProgressChildless(t *testing.T) {
 	}
 }
 
+// TestStatsArchivedTreatedLikeDone：archived 是 done 的封存態——手上未結案張數不該把它算進去，
+// REQ 完成度也不該因為封存反而漏算分子（Y20260920/REQ-ARCHIVED-DONE）。
+func TestStatsArchivedTreatedLikeDone(t *testing.T) {
+	s := newStore(t)
+	bg := context.Background()
+	project, req, issue := fixtureTree(t, s)
+
+	mustAssign(t, s, "human", issue.ID, "xiaoxia")
+	mustTransition(t, s, "xiaoxia", issue.ID, domain.StatusInProgress, "")
+	mustTransition(t, s, "xiaoxia", issue.ID, domain.StatusReview, "")
+	if _, err := s.Verify(bg, "xiaoxia", issue.ID, "自測通過"); err != nil {
+		t.Fatal(err)
+	}
+	mustTransition(t, s, "claude", issue.ID, domain.StatusArchived, "驗證無誤，封存")
+
+	st, err := s.Stats(bg, project.ID)
+	if err != nil {
+		t.Fatalf("Stats: %v", err)
+	}
+	if st.CountByStatus[domain.StatusArchived] != 1 || st.CountByStatus[domain.StatusDone] != 0 {
+		t.Errorf("CountByStatus = %+v, want archived=1 done=0", st.CountByStatus)
+	}
+	if _, ok := st.CountByOwner["xiaoxia"]; ok {
+		t.Errorf("archived 不應計入手上未結案張數: %+v", st.CountByOwner)
+	}
+	if got := st.ReqProgress[req.ID]; got != 1.0 {
+		t.Errorf("ReqProgress[%s] = %v, want 1（archived 要當 done 算進分子）", req.ID, got)
+	}
+	if st.SelfVerifiedCount != 1 {
+		t.Errorf("SelfVerifiedCount = %d, want 1（封存不該讓自我驗收稽核數字消失）", st.SelfVerifiedCount)
+	}
+
+	history, err := s.SelfVerifiedHistory(bg, project.ID)
+	if err != nil {
+		t.Fatalf("SelfVerifiedHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].NodeID != issue.ID {
+		t.Errorf("SelfVerifiedHistory = %+v, want 1 筆 %s", history, issue.ID)
+	}
+}
+
 func TestRecentHistory(t *testing.T) {
 	s := newStore(t)
 	bg := context.Background()

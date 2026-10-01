@@ -23,6 +23,10 @@
     --st-hold: #80868b;
     --st-done: #188038;
     --st-cancel: #9aa0a6;
+    --st-archived: #795548;
+    /* 變動閃爍（F2）：變動格強色、父層鏈淡色（沿用強調色，兩個主題各自給 rgba）。 */
+    --flash: rgba(26, 115, 232, .30);
+    --flash-parent: rgba(26, 115, 232, .15);
   }
   /* 暗色：對齊 claude.ai（cds token：gray-850/800/400/50、clay #d97757）。只覆寫 token，不重抄整份 CSS。 */
   [data-theme="dark"] {
@@ -42,6 +46,9 @@
     --st-hold: #6d6b67;
     --st-done: #91d68b;
     --st-cancel: #52514e;
+    --st-archived: #a1887f;
+    --flash: rgba(217, 119, 87, .32);
+    --flash-parent: rgba(217, 119, 87, .16);
   }
   /* 暗色卡片質感：比照 claude.ai 的圓角與低對比邊框（淺色主題不動）。 */
   [data-theme="dark"] .card { border-radius: 12px; }
@@ -75,6 +82,10 @@
   .topbar .spacer { flex: 1; }
   .topbar .meta { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 8px; }
   .dot-sep { color: var(--border); }
+  /* 即時連線狀態小燈（F1）：綠＝SSE 連線中、灰＝重連中；不打擾（沉在 topbar 一隅）。 */
+  .live-status { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+  .live-status .live-dot { font-size: 10px; line-height: 1; color: var(--muted); }
+  .live-status.on .live-dot { color: var(--st-done); }
 
   .btn {
     font: inherit; font-size: 12px; color: var(--text);
@@ -163,6 +174,19 @@
   .tnode .owner { color: var(--muted); font-size: 11px; margin-left: auto; padding-left: 10px; }
   .tree .empty, .empty { color: var(--muted); padding: 10px; }
 
+  /* 報告節點（F3）：樹上的計數小徽章＋詳情頁的報告列。報告預設收合在父節點下，
+     不跟著一般子節點一起展開，避免（如 Y20260916）大批 done 報告把樹塞滿。 */
+  .tbadge {
+    font: inherit; font-size: 10px; color: var(--muted); background: var(--card);
+    border: 1px solid var(--border); border-radius: 999px; padding: 0 6px;
+    margin-left: 6px; cursor: pointer; flex: none; line-height: 16px;
+  }
+  .tbadge:hover { color: var(--text); background: var(--hover); }
+  .rrow { cursor: pointer; }
+  .rrow .rtitle { color: var(--accent); }
+  .rrow:hover .rtitle { text-decoration: underline; }
+  .rrow .rmeta { color: var(--muted); font-size: 11px; }
+
   /* 詳情 */
   .detail { min-height: 620px; max-height: 620px; overflow: auto; }
   .kv { display: grid; grid-template-columns: 72px 1fr; gap: 4px 12px; margin-bottom: 12px; }
@@ -234,6 +258,64 @@
     margin: 14px 0 2px; padding-bottom: 2px;
   }
   .proj-title:first-child { margin-top: 0; }
+
+  /* ---- 即時動態（F2）：右下角浮動小卡，可收合成小圓鈕 ---- */
+  .feed {
+    position: fixed; right: 16px; bottom: 16px; z-index: 20;
+    width: 300px; max-width: calc(100vw - 32px);
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .18); overflow: hidden;
+  }
+  .feed-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  .feed-head .feed-title { font-weight: 600; font-size: 12px; }
+  .feed-head .spacer { flex: 1; }
+  .feed-toggle {
+    font: inherit; font-size: 14px; line-height: 1; color: var(--muted);
+    background: none; border: 0; cursor: pointer; padding: 0 4px;
+  }
+  .feed-toggle:hover { color: var(--text); }
+  .feed-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; }
+  .feed-item {
+    display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 10px;
+    border-bottom: 1px solid var(--bg); font-size: 12px; cursor: pointer;
+  }
+  .feed-item:hover { background: var(--hover); }
+  .feed-item .who { color: var(--accent); }
+  .feed-item .nid { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--muted); }
+  /* 跨專案動態：左側小標籤顯示來源專案，跟目前專案的動態一眼區隔。 */
+  .feed-item .proj {
+    color: var(--accent); font-size: 10px; border: 1px solid var(--border);
+    border-radius: 4px; padding: 0 4px; align-self: center;
+  }
+  .feed-item.foreign .nid { color: var(--accent); }
+  .feed-empty { padding: 10px; color: var(--muted); font-size: 12px; }
+  .feed-bubble {
+    position: fixed; right: 16px; bottom: 16px; z-index: 20;
+    width: 40px; height: 40px; border-radius: 50%; padding: 0;
+    background: var(--accent); color: #fff; border: 0; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 700;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
+  }
+  .feed-bubble:hover { filter: brightness(1.06); }
+
+  /* ---- 變動閃爍（F2）：只用 CSS keyframes，JS 只加／移除 class ---- */
+  @keyframes pb-flash-strong {
+    0%   { background-color: transparent; }
+    20%  { background-color: var(--flash); }
+    100% { background-color: transparent; }
+  }
+  @keyframes pb-flash-soft {
+    0%   { background-color: transparent; }
+    20%  { background-color: var(--flash-parent); }
+    100% { background-color: transparent; }
+  }
+  .pb-flash { animation: pb-flash-strong 1.2s ease-out; border-radius: 4px; }
+  .pb-flash-parent { animation: pb-flash-soft 1.2s ease-out; border-radius: 4px; }
+  /* 尊重系統設定：不做動畫，改成 2 秒靜態外框提示（JS 改以固定時長移除 class）。 */
+  @media (prefers-reduced-motion: reduce) {
+    .pb-flash { animation: none; box-shadow: inset 0 0 0 2px var(--accent); }
+    .pb-flash-parent { animation: none; }
+  }
 </style>
 <script>
 /* 套用主題要在首次繪製前，避免閃爍（FOUC）：有存選擇用存的，沒存跟隨 prefers-color-scheme。 */
@@ -259,6 +341,8 @@
       <span id="addr">127.0.0.1:8787</span>
       <span class="dot-sep">·</span>
       <span>更新 <span id="updated">--:--</span></span>
+      <span class="dot-sep">·</span>
+      <span id="live-status" class="live-status off" title="即時更新連線狀態">即時 <span class="live-dot">●</span></span>
       <button id="refresh" class="btn" type="button">重新整理</button>
     </div>
     <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切換為暗色模式" title="切換為暗色模式">
@@ -310,6 +394,16 @@
     </section>
   </div>
 
+  <div id="feed" class="feed" hidden>
+    <div class="feed-head">
+      <span class="feed-title">即時動態</span>
+      <span class="spacer"></span>
+      <button id="feed-toggle" class="feed-toggle" type="button" aria-label="收合即時動態" title="收合">–</button>
+    </div>
+    <ul class="feed-list" id="feed-list"></ul>
+  </div>
+  <button id="feed-bubble" class="feed-bubble" type="button" aria-label="展開即時動態" title="即時動態" hidden>0</button>
+
 <script>
 "use strict";
 
@@ -322,7 +416,8 @@ var FALLBACK_STATUS = {
   blocked:     { key: "blocked",     icon: "\u25cf", label: "卡住",   color: "#d93025" },
   hold:        { key: "hold",        icon: "\u25cc", label: "暫緩",   color: "#80868b" },
   done:        { key: "done",        icon: "\u2714", label: "完成",   color: "#188038" },
-  cancel:      { key: "cancel",      icon: "\u2715", label: "不做",   color: "#9aa0a6" }
+  cancel:      { key: "cancel",      icon: "\u2715", label: "不做",   color: "#9aa0a6" },
+  archived:    { key: "archived",    icon: "\ud83d\udce6", label: "封存", color: "#795548" }
 };
 var FALLBACK_TABS = { focus: "\u7126\u9ede", progress: "\u9032\u5ea6", checklist: "\u6bcd\u8868", weekly: "\u9031\u5831" };
 var FALLBACK_META = { types: [], owners: [], statuses: [], tabs: [] };
@@ -337,6 +432,9 @@ var state = {
   report: null,
   selected: null,
   expanded: {},
+  // expandedReports：樹上「報告」小徽章的展開狀態（key＝父節點 id）。報告預設收合，
+  // 不與一般子節點的 state.expanded 混用，才不會因為展開 ISSUE 就一次噴出全部報告。
+  expandedReports: {},
   activeTab: null,
   suppressPush: false,
   filterProject: "",
@@ -416,10 +514,19 @@ function facetMatches(n, excludeField, hideDone) {
   if (state.filterStatus && excludeField !== "status" && n.status !== state.filterStatus) return false;
   if (state.filterOwner && excludeField !== "owner" && n.owner !== state.filterOwner) return false;
   if (state.filterType && excludeField !== "type" && n.type !== state.filterType) return false;
-  // hideDone：只有在「沒有另外明講要看哪個狀態」時才排除done。使用者一旦自己點了狀態chip
-  // (含「完成」)，就是他自己選的，不再幫他偷偷過濾——這是型別列專用，狀態列不吃這個參數。
-  if (hideDone && !state.filterStatus && n.status === "done") return false;
+  // hideDone：只有在「沒有另外明講要看哪個狀態」時才排除done／archived（archived是done的封存態，
+  // 待遇比照done）。使用者一旦自己點了狀態chip(含「完成」「封存」)，就是他自己選的，不再幫他
+  // 偷偷過濾——這是型別列專用，狀態列不吃這個參數。
+  if (hideDone && !state.filterStatus && (n.status === "done" || n.status === "archived")) return false;
+  if (excludeField === "status" && reportOutOfStatusFacet(n)) return false;
   return true;
+}
+
+// reportOutOfStatusFacet：報告（type=report）是文件不是工作項，建立後預設 todo 也不會有人去轉狀態；
+// 樹上又只以父節點的「報告 N」徽章呈現、不會單獨成列。所以除非使用者明講只看報告型別，
+// 報告不進狀態列計數、也不單獨吃狀態篩選——否則會出現「未開始 5」點下去卻全是完成節點的矛盾。
+function reportOutOfStatusFacet(n) {
+  return isReportNode(n) && state.filterType !== "report";
 }
 
 function countByField(nodes, field, excludeField, counts, hideDone) {
@@ -550,6 +657,29 @@ function projectOf(id) {
   return i < 0 ? s : s.slice(0, i);
 }
 
+/* ---- 報告節點（type=report）共用工具（F3） ---- */
+function isReportNode(n) { return !!n && n.type === "report"; }
+// reportChildren：node 的直接子節點中，type=report 者（收工／檢討報告）。
+function reportChildren(node) {
+  return ((node && node.children) || []).filter(isReportNode);
+}
+// nonReportChildren：一般子節點（ISSUE／REQ…），報告另立一區，不混在「子節點」裡。
+function nonReportChildren(node) {
+  return ((node && node.children) || []).filter(function (c) { return !isReportNode(c); });
+}
+// findNodeById：在 state.tree 中 DFS 找節點（畫報告、判斷型別用）。
+function findNodeById(id) {
+  var stack = (state.tree || []).slice();
+  while (stack.length) {
+    var n = stack.pop();
+    if (!n) continue;
+    if (n.id === id) return n;
+    var kids = n.children || [];
+    for (var i = 0; i < kids.length; i++) stack.push(kids[i]);
+  }
+  return null;
+}
+
 // projectTitle：專案 id → 顯示名（id — title；找不到就回 id）。
 function projectTitle(pid) {
   var nodes = state.tree || [];
@@ -627,11 +757,12 @@ function pushURL(replace) {
 function matches(n) {
   if (state.filterProject && projectOf(n.id) !== state.filterProject) return false;
   if (state.filterStatus && n.status !== state.filterStatus) return false;
+  if (state.filterStatus && reportOutOfStatusFacet(n)) return false;
   if (state.filterOwner && n.owner !== state.filterOwner) return false;
   if (state.filterType && n.type !== state.filterType) return false;
-  // 跟型別列的 hideDone 對齊：點了型別chip、但沒另外指定狀態時，done不出現在樹裡，
-  // 不然型別chip數字(已排除done)會跟樹的結果對不上。
-  if (state.filterType && !state.filterStatus && n.status === "done") return false;
+  // 跟型別列的 hideDone 對齊：點了型別chip、但沒另外指定狀態時，done／archived不出現在樹裡，
+  // 不然型別chip數字(已排除done／archived)會跟樹的結果對不上。
+  if (state.filterType && !state.filterStatus && (n.status === "done" || n.status === "archived")) return false;
   return true;
 }
 
@@ -640,6 +771,19 @@ function filterTree(nodes) {
   (nodes || []).forEach(function (n) {
     var kids = filterTree(n.children || []);
     if (matches(n) || kids.length) {
+      // 報告跟著父節點一起出現：報告多半是 done，狀態篩選（例：只看 in_progress）
+      // 不該把父節點底下的報告整批濾掉——父節點還在，它的報告就跟著在。
+      // 但使用者若明講只看某個型別（filterType），就不硬塞報告進去。
+      if (!state.filterType) {
+        var seen = {};
+        kids.forEach(function (k) { seen[k.id] = true; });
+        (n.children || []).forEach(function (c) {
+          if (isReportNode(c) && !seen[c.id]) {
+            kids.push({ id: c.id, type: c.type, title: c.title, status: c.status, owner: c.owner, children: [] });
+            seen[c.id] = true;
+          }
+        });
+      }
       out.push({ id: n.id, type: n.type, title: n.title, status: n.status, owner: n.owner, children: kids });
     }
   });
@@ -653,6 +797,8 @@ function expandFilteredBranches(nodes) {
   (nodes || []).forEach(function (n) {
     if (n.children && n.children.length) {
       state.expanded[n.id] = true;
+      // 明講看報告型別時，報告就是篩選結果本身，徽章直接展開，不然只看到父節點。
+      if (state.filterType === "report" && n.children.some(isReportNode)) state.expandedReports[n.id] = true;
       expandFilteredBranches(n.children);
     }
   });
@@ -676,28 +822,49 @@ function renderTree() {
 function treeRow(node, depth) {
   var frag = document.createDocumentFragment();
   var row = el("div", "tnode");
+  row.setAttribute("data-node-id", node.id); // 供即時變動閃爍（F2）用 id 找到對應列
   if (state.selected === node.id) row.className += " selected";
   row.style.paddingLeft = (6 + depth * 16) + "px";
 
   var kids = node.children || [];
-  var caret = el("span", "caret" + (kids.length ? "" : " leaf"), kids.length ? (state.expanded[node.id] ? "\u25be" : "\u25b8") : "\u25b8");
+  // 報告（type=report）不跟一般子節點一起展開：預設收合，改用行內小徽章單獨展開，
+  // 免得一個節點底下掛了一堆 done 報告，一展開就把樹淹掉。
+  var reportKids = kids.filter(isReportNode);
+  var normalKids = kids.filter(function (c) { return !isReportNode(c); });
+  var caret = el("span", "caret" + (normalKids.length ? "" : " leaf"), normalKids.length ? (state.expanded[node.id] ? "\u25be" : "\u25b8") : "\u25b8");
   row.appendChild(caret);
   row.appendChild(statusDot(node.status, false));
   row.appendChild(el("span", "label", node.title || node.id));
+  if (reportKids.length) {
+    var badge = el("button", "tbadge");
+    badge.type = "button";
+    badge.textContent = "報告 " + reportKids.length;
+    badge.title = "展開／收合報告";
+    badge.setAttribute("data-report-count", String(reportKids.length));
+    badge.addEventListener("click", function (ev) {
+      ev.stopPropagation();
+      state.expandedReports[node.id] = !state.expandedReports[node.id];
+      renderTree();
+    });
+    row.appendChild(badge);
+  }
   row.appendChild(el("span", "type", node.type || ""));
   row.appendChild(el("span", "owner", node.owner || ""));
 
   caret.addEventListener("click", function (ev) {
     ev.stopPropagation();
-    if (!kids.length) return;
+    if (!normalKids.length) return;
     state.expanded[node.id] = !state.expanded[node.id];
     renderTree();
   });
   row.addEventListener("click", function () { selectNode(node.id); });
   frag.appendChild(row);
 
-  if (kids.length && state.expanded[node.id]) {
-    kids.forEach(function (c) { frag.appendChild(treeRow(c, depth + 1)); });
+  if (normalKids.length && state.expanded[node.id]) {
+    normalKids.forEach(function (c) { frag.appendChild(treeRow(c, depth + 1)); });
+  }
+  if (reportKids.length && state.expandedReports[node.id]) {
+    reportKids.forEach(function (c) { frag.appendChild(treeRow(c, depth + 1)); });
   }
   return frag;
 }
@@ -735,17 +902,33 @@ function expandAncestors(id) {
 function selectNode(id) {
   state.selected = id;
   expandAncestors(id);
+  // 選到報告時，順手把它在樹上的報告徽章展開，免得右邊顯示了報告、左邊樹卻看不到它。
+  if (isReportNode(findNodeById(id))) {
+    var path = findPath(state.tree, id);
+    if (path && path.length >= 2) state.expandedReports[path[path.length - 2]] = true;
+  }
   pushURL();
   renderTree();
+  return loadDetail(id);
+}
+
+// encodePath：把節點 id（含 `/`）逐段 URL-encode，保留分隔斜線（沿用既有寫法）。
+function encodePath(id) {
+  return id.split("/").map(encodeURIComponent).join("/");
+}
+
+// loadDetail：載入並繪製某節點的詳情（節點＋history＋專案 repo）。純繪製，不動 URL／樹。
+// 初始選取（selectNode）與即時事件更新（F1，節點被改到時）共用同一條路徑。
+function loadDetail(id) {
   var host = document.getElementById("detail");
   host.textContent = "";
   host.appendChild(el("div", "empty", "載入中…"));
-  var enc = id.split("/").map(encodeURIComponent).join("/");
+  var enc = encodePath(id);
   var pid = projectOf(id);
   var projReq = (pid && pid !== id)
     ? getJSON("/api/node/" + encodeURIComponent(pid)).catch(function () { return null; })
     : Promise.resolve(null);
-  Promise.all([
+  return Promise.all([
     getJSON("/api/node/" + enc),
     getJSON("/api/node/" + enc + "/history").catch(function () { return []; }),
     projReq
@@ -773,6 +956,29 @@ function linkURL(repo, l) {
   if (l.kind === "commit") return base + "/commit/" + l.target;
   if (l.kind === "pr") return /^https?:/.test(l.target) ? l.target : base + "/pull/" + l.target;
   return "";
+}
+
+// reportRow：詳情頁「報告」區塊的一列——先顯示報告 id，抓到節點後補上標題／owner／日期；
+// 點一列＝選取該報告節點，右側載入它的完整內容（markdown body）。fail-soft：抓不到維持 id。
+function reportRow(child) {
+  var li = el("li", "rrow");
+  li.setAttribute("data-report-id", child.id);
+  var title = el("div", "rtitle", child.id);
+  var meta = el("div", "rmeta", "");
+  li.appendChild(title);
+  li.appendChild(meta);
+  li.addEventListener("click", function () { selectNode(child.id); });
+  getJSON("/api/node/" + child.id.split("/").map(encodeURIComponent).join("/"))
+    .then(function (rep) {
+      if (!document.body.contains(li)) return; // 已換頁，別把內容補到別的詳情裡
+      if (rep && rep.title) title.textContent = rep.title;
+      var parts = [];
+      if (rep && rep.owner) parts.push(rep.owner);
+      if (rep && rep.created_at) parts.push(fmtDate(rep.created_at));
+      meta.textContent = parts.join(" \u00b7 ");
+    })
+    .catch(function () {});
+  return li;
 }
 
 function renderDetail(node, history, repoURL) {
@@ -832,7 +1038,7 @@ function renderDetail(node, history, repoURL) {
   }
 
   host.appendChild(el("div", "section-title", "子節點"));
-  var kids = node.children || [];
+  var kids = nonReportChildren(node);
   if (!kids.length) {
     host.appendChild(el("div", "empty", "\u7121"));
   } else {
@@ -845,6 +1051,16 @@ function renderDetail(node, history, repoURL) {
       kl.appendChild(li);
     });
     host.appendChild(kl);
+  }
+
+  // 報告區塊（F3）：直接子節點中 type=report 者（收工／檢討報告），列標題／owner／日期，
+  // 點一下載入該報告全文。報告不混進「子節點」列，才不會被一串 id 淹掉。
+  var reports = reportChildren(node);
+  if (reports.length) {
+    host.appendChild(el("div", "section-title", "報告（" + reports.length + "）"));
+    var rl = el("ul", "plain");
+    reports.forEach(function (c) { rl.appendChild(reportRow(c)); });
+    host.appendChild(rl);
   }
 
   host.appendChild(el("div", "section-title", "歷史"));
@@ -1159,6 +1375,374 @@ function openTab(id) {
   if (!extrasLoaded) { extrasLoaded = true; loadExtras(); }
 }
 
+/* ---- 即時更新：SSE 接線（F1）----
+   後端 GET /api/events（事件合約見父 REQ）逐筆推 history 變動；這裡只做「收到事件 →
+   重抓那一個節點 → 就地更新 state 與 DOM」，不重抓整棵樹、不整頁重載。 */
+var liveState = {
+  es: null,
+  lastId: 0,       // 已處理的最大事件 id（去重；history id 單調遞增）
+  pending: {},     // node_id -> {timer, event}：300ms 內的合併
+  downSince: 0,    // 斷線起始時間（ms）；>30s 仍沒恢復就整份重載
+  ready: false,    // 初次載入是否完成（未完成前收到的事件先進 buffer，避免漏事件）
+  buffer: []       // 載入期間暫存的事件（P3；載入完依序套用）
+};
+
+// nodeInScope：節點是否落在「目前檢視的專案」範圍（未指定專案＝全部，一律算在範圍內）。
+// 全域 SSE 會收到所有專案的事件；落在範圍外的只更新 state.tree／即時動態，不動目前畫面，
+// 這樣開在 A 專案時 B 專案的變動也會廣播到 dashboard，但不會擾動你正在看的 A。
+function nodeInScope(nodeID) {
+  return !state.filterProject || projectOf(nodeID) === state.filterProject;
+}
+
+// findTreeNode：在 state.tree 中找節點，回 {node, parent, index}（parent 為 null＝根層）。
+function findTreeNode(id, list, parent) {
+  list = list || state.tree || [];
+  for (var i = 0; i < list.length; i++) {
+    var n = list[i];
+    if (!n) continue;
+    if (n.id === id) return { node: n, parent: parent || null, index: i };
+    var kids = n.children || [];
+    if (kids.length) {
+      var r = findTreeNode(id, kids, n);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+// setLiveStatus：連線狀態小燈（on＝綠：連線中；off＝灰：重連中）。
+function setLiveStatus(on) {
+  var node = document.getElementById("live-status");
+  if (!node) return;
+  node.className = "live-status " + (on ? "on" : "off");
+}
+
+// connectEvents：建立 EventSource（全域訂閱，只建一次就不再重建）。
+// 2026-09-27 改：不再帶 ?project= —— 後端 fanout 的 projectMatches("")＝全部，所以跨專案
+// 事件也收得到（開在 A 專案時 B 專案的變動同樣會廣播進來）。切換專案不再拆線重建，避免
+// 重連空窗漏事件；收到的事件一律套進 state.tree（保持全樹新鮮），只有落在目前專案範圍者才重繪畫面。
+function connectEvents() {
+  if (liveState.es) return;
+  var es;
+  try { es = new EventSource("/api/events"); }
+  catch (e) { setLiveStatus(false); return; }
+  liveState.es = es;
+  es.addEventListener("open", function () { setLiveStatus(true); liveState.downSince = 0; });
+  es.addEventListener("error", function () {
+    setLiveStatus(false);
+    if (!liveState.downSince) liveState.downSince = Date.now();
+    // EventSource 會自動重連；若持續 30 秒仍連不上（可能漏事件）→ 整份重載一次。
+    if (Date.now() - liveState.downSince > 30000) { liveState.downSince = Date.now(); resyncAll(); }
+  });
+  es.addEventListener("node", onNodeEvent);
+  es.addEventListener("reset", function () {
+    // 載入沒還沒就緒 → 跟一般事件一起暫存，載入完再處理（P3）。
+    if (!liveState.ready) { liveState.buffer.push({ action: "reset" }); return; }
+    resyncAll();
+  });
+}
+
+// onNodeEvent：SSE 進入點——先解析；初次載入沒還沒就緒就先暫存（P3，避免漏事件）。
+function onNodeEvent(e) {
+  var ev;
+  try { ev = JSON.parse(e.data); } catch (err) { return; }
+  if (!ev || typeof ev !== "object") return;
+  if (!liveState.ready) { liveState.buffer.push(ev); return; }
+  dispatchLiveEvent(ev);
+}
+
+// dispatchLiveEvent (not dispatchEvent: a top-level function of that name would shadow window.dispatchEvent)：套用單一事件（去重 ＋ 判定表見 ISSUE-LIVE-F1）；載入後的緩衝事件重播也走這裡。
+// 未知 action 只 debug，不報錯。
+function dispatchLiveEvent(ev) {
+  var id = (typeof ev.id === "number") ? ev.id : 0;
+  if (id && id <= liveState.lastId) return; // 去重：同 id 不處理兩次
+  if (id) liveState.lastId = id;
+  switch (ev.action) {
+    case "reset":
+      resyncAll();
+      return;
+    case "delete":
+      addFeed(ev);
+      applyDelete(ev);
+      return;
+    case "comment": case "link": case "unlink": case "hook": case "unhook":
+      // 這些不動列表；hook／unhook 不列動態；其餘列動態＋只有剛好在看這個
+      // 節點的詳情時才重抓。
+      if (ev.action !== "hook" && ev.action !== "unhook") addFeed(ev);
+      if (state.selected && state.selected === ev.node_id) loadDetail(state.selected);
+      return;
+    case "create": case "update": case "transition": case "verify": case "assign":
+      addFeed(ev);
+      scheduleNodeRefresh(ev);
+      return;
+    default:
+      console.debug("pb live：未知 action，忽略", ev.action, ev);
+  }
+}
+
+// liveReady：初次載入完成後才開始套用即時事件；載入期間暫存的事件依序重播（P3）。
+// 重播的事件都是「重抓節點」且幂等，即使已經反映在剛載入的資料裡，重複套用也無害。
+function liveReady() {
+  liveState.ready = true;
+  var buf = liveState.buffer;
+  liveState.buffer = [];
+  for (var i = 0; i < buf.length; i++) dispatchLiveEvent(buf[i]);
+}
+
+// scheduleNodeRefresh：同一 node 300ms 內的連續事件合併成一次重抓（debounce）。
+function scheduleNodeRefresh(ev) {
+  var id = ev.node_id;
+  if (!id) return;
+  var p = liveState.pending[id];
+  if (p) { clearTimeout(p.timer); p.event = ev; }
+  else { p = liveState.pending[id] = { timer: 0, event: ev }; }
+  p.timer = setTimeout(function () {
+    delete liveState.pending[id];
+    refreshNode(p.event);
+  }, 300);
+}
+
+// refreshNode：重抓單一節點（沿用既有 /api/node/{id}）→ 就地更新 state.tree；create 時插到父底下。
+function refreshNode(ev) {
+  var id = ev.node_id;
+  getJSON("/api/node/" + encodePath(id)).then(function (node) {
+    // 全樹都套用（連別專案的節點也寫回 state.tree），切到那個專案時就馬上是最新的。
+    applyNode(node, ev);
+    // 只有落在目前專案範圍的事件才重繪畫面／閃爍；範圍外的變動只反映在 state.tree 與即時動態。
+    if (!nodeInScope(id)) return;
+    renderStats();
+    renderTypeStats();
+    renderTreePreserveScroll();
+    if (state.selected === id) loadDetail(id); // 正在看的詳情也要即時更新
+    flashChange(ev); // F2：變動格強閃、父層鏈淡閃（分頁在背景時不播）
+  }).catch(function () { /* 節點可能剛被刪；交給 delete 事件處理 */ });
+}
+
+// applyNode：把重抓到的節點寫回 state.tree——就地更新純量欄位，保留既有子樹
+// （單節點 API 的子節點只有 id/type/status，不足以重建子樹，故不覆蓋 children）。
+function applyNode(node, ev) {
+  var loc = findTreeNode(node.id);
+  if (loc) {
+    var n = loc.node;
+    n.type = node.type; n.title = node.title; n.status = node.status;
+    n.owner = node.owner; n.priority = node.priority;
+    return;
+  }
+  if (ev && ev.parent_id) {
+    var p = findTreeNode(ev.parent_id);
+    if (p) {
+      if (!p.node.children) p.node.children = [];
+      p.node.children.push({
+        id: node.id, type: node.type, title: node.title,
+        status: node.status, owner: node.owner, priority: node.priority, children: []
+      });
+    }
+  }
+}
+
+// applyDelete：刪除事件（CTO 2026-09-25 定案）——node_id＝還存在的祖先、from＝被刪節點 id。
+// 移除 id=from 的那一列；若正在看它，改選回父層或清空詳情。
+function applyDelete(ev) {
+  var victim = ev.from;
+  if (!victim) return;
+  var loc = findTreeNode(victim);
+  if (loc) {
+    if (loc.parent) loc.parent.children.splice(loc.index, 1);
+    else state.tree.splice(loc.index, 1);
+  }
+  if (state.selected === victim) {
+    if (ev.node_id && findTreeNode(ev.node_id)) {
+      selectNode(ev.node_id);
+    } else {
+      state.selected = null;
+      var host = document.getElementById("detail");
+      host.textContent = "";
+      host.appendChild(el("div", "empty", "從左側選一張單"));
+    }
+  }
+  // 範圍外的刪除只從 state.tree 移除，不重繪目前畫面（保持全樹新鮮、不擾動你正在看的專案）。
+  if (!nodeInScope(ev.node_id || victim)) return;
+  renderStats();
+  renderTypeStats();
+  renderTreePreserveScroll();
+  flashChange(ev); // F2：刪除 ⇒ 閃的是父層（ev.node_id）
+}
+
+// renderTreePreserveScroll：重繪樹但保留捲動位置（即時更新不該把使用者的捲軸彈回頂端）。
+function renderTreePreserveScroll() {
+  var host = document.getElementById("tree");
+  var top = host ? host.scrollTop : 0;
+  renderTree();
+  if (host) host.scrollTop = top;
+}
+
+// resyncAll：reset／長時間斷線 → 整份重載（樹＋專案加值資料）。比 reloadProject() 多補
+// 重抓一次 /api/tree：reloadProject 不含樹，漏事件時只重抓加值資料會殘留舊樹。
+function resyncAll() {
+  return getJSON("/api/tree").then(function (tree) {
+    state.tree = tree || [];
+    renderFilters();
+  }).catch(function () { /* 失敗保留舊樹 */ }).then(function () {
+    return reloadProject();
+  });
+}
+
+/* ---- 即時動態列表＋變動閃爍（F2）---- */
+
+// ACTOR_NAMES：actor 代號 → 中文顯示名（名冊；不在表內就顯示原代號，不猜）。
+var ACTOR_NAMES = {
+  xiaoxia: "小蝦", kaimake: "開碼客", kaimadi: "開碼弟",
+  yilong: "一龍", claude: "克勞德", copilot: "副官狗", human: "學長", unassigned: "未指派"
+};
+function actorName(a) { return (a && ACTOR_NAMES[a]) || a || "—"; }
+
+// nodeShortID：單號短名＝id 最後一段（沒有斜線就原樣）。
+function nodeShortID(id) {
+  var s = String(id || "");
+  var i = s.lastIndexOf("/");
+  return i < 0 ? s : s.slice(i + 1);
+}
+
+// actionText：動作白話對照表（集中一處；未知 action 顯示原字）。
+function actionText(ev) {
+  switch (ev.action) {
+    case "create": return "新增了 " + (ev.node_type || "節點");
+    case "transition": return "轉成 " + (ev.to || "");
+    case "verify": return "驗收通過";
+    case "assign": return "指派給 " + actorName(ev.to);
+    case "comment": return "新增留言";
+    case "link": return "掛了連結";
+    case "unlink": return "移除連結";
+    case "delete": return "刪除了";
+    case "update":
+      if (ev.field === "owner") return "指派給 " + actorName(ev.to);
+      if (ev.field === "title") return "改了標題";
+      if (ev.field === "body") return "改了內容";
+      if (ev.field === "priority") return "改了優先度";
+      if (ev.field === "tags") return "改了標籤";
+      return "更新 " + (ev.field || "");
+    default: return ev.action || "事件";
+  }
+}
+
+var FEED_KEY = "pb-feed-collapsed";
+var FEED_MAX = 50;
+var feedState = { collapsed: false, unread: 0 };
+
+// feedInit：還原收合狀態（localStorage，try/catch）＋綁收合／展開鈕＋空狀態。
+function feedInit() {
+  try { feedState.collapsed = localStorage.getItem(FEED_KEY) === "1"; } catch (e) { feedState.collapsed = false; }
+  var list = document.getElementById("feed-list");
+  if (list && !list.children.length) list.appendChild(el("li", "feed-empty", "尚無動態"));
+  var toggle = document.getElementById("feed-toggle");
+  if (toggle) toggle.addEventListener("click", function () { feedSetCollapsed(true); });
+  var bubble = document.getElementById("feed-bubble");
+  if (bubble) bubble.addEventListener("click", function () { feedSetCollapsed(false); });
+  feedSetCollapsed(feedState.collapsed);
+}
+
+// feedSetCollapsed：收合＝整卡藏起、改顯示右下小圓鈕；展開時未讀清零。
+function feedSetCollapsed(collapsed) {
+  feedState.collapsed = collapsed;
+  try { localStorage.setItem(FEED_KEY, collapsed ? "1" : "0"); } catch (e) { /* 私密瀏覽忽略 */ }
+  var card = document.getElementById("feed");
+  var bubble = document.getElementById("feed-bubble");
+  if (card) card.hidden = collapsed;
+  if (bubble) bubble.hidden = !collapsed;
+  if (!collapsed) { feedState.unread = 0; feedUpdateBadges(); }
+}
+
+// feedUpdateBadges：未讀數顯示在小圓鈕＋分頁標題（回到前景／展開時清零）。
+function feedUpdateBadges() {
+  var bubble = document.getElementById("feed-bubble");
+  if (bubble) bubble.textContent = feedState.unread > 99 ? "99+" : String(feedState.unread);
+  document.title = feedState.unread ? "(" + feedState.unread + ") ProjectBoard" : "ProjectBoard";
+}
+
+// addFeed：把一筆事件推上動態列表（最新在上、最多 FEED_MAX 筆），點擊跳到該節點。
+// 分頁在背景或列表收合時累積未讀；前景且展開不算未讀。
+function addFeed(ev) {
+  var list = document.getElementById("feed-list");
+  if (!list) return;
+  var placeholder = list.querySelector(".feed-empty");
+  if (placeholder) list.removeChild(placeholder);
+  var jumpID = ev.node_id;
+  var li = el("li", "feed-item");
+  li.setAttribute("data-node-id", jumpID || "");
+  // 跨專案事件（不在目前檢視專案）加標記：顯示來源專案，跟目前專案的動態區隔開。
+  if (!nodeInScope(jumpID)) {
+    li.className += " foreign";
+    li.appendChild(el("span", "proj", projectOf(jumpID)));
+  }
+  li.appendChild(el("span", "ts", fmtTime(ev.ts)));
+  li.appendChild(el("span", "who", actorName(ev.actor)));
+  li.appendChild(el("span", "nid", nodeShortID(ev.action === "delete" ? (ev.from || jumpID) : jumpID)));
+  li.appendChild(el("span", "act", actionText(ev)));
+  li.addEventListener("click", function () {
+    if (!jumpID) return;
+    var proj = projectOf(jumpID);
+    // 跨專案動態：先切到該專案再選節點，否則樹被篩掉會看不到它。
+    if (proj && state.filterProject && proj !== state.filterProject) {
+      state.filterProject = proj;
+      var fp = document.getElementById("f-project");
+      if (fp) fp.value = proj;
+      resyncAll().then(function () { selectNode(jumpID); });
+      return;
+    }
+    if (findTreeNode(jumpID)) selectNode(jumpID);
+  });
+  list.insertBefore(li, list.firstChild);
+  while (list.children.length > FEED_MAX) list.removeChild(list.lastChild);
+  if (document.hidden || feedState.collapsed) feedState.unread++;
+  feedUpdateBadges();
+}
+
+var reduceMotion = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : { matches: false };
+
+// rowForNode：找到樹上該節點的列（用 data-node-id 線性比對，避免 id 內的 / . 需轉義）。
+function rowForNode(id) {
+  if (!id) return null;
+  var host = document.getElementById("tree");
+  if (!host) return null;
+  var rows = host.querySelectorAll("[data-node-id]");
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].getAttribute("data-node-id") === id) return rows[i];
+  }
+  return null;
+}
+
+// flashElement：加 class 播動畫；短時間內同格又變動 → 先移除 class、強制 reflow 再加回，重新開始不疊加。
+// reduced-motion：不動畫，改成 2 秒靜態外框提示（用固定時長移除 class）。
+function flashElement(elm, strong) {
+  if (!elm) return;
+  var cls = strong ? "pb-flash" : "pb-flash-parent";
+  elm.classList.remove(cls);
+  void elm.offsetWidth; // 強制 reflow，讓同一格能重新觸發動畫
+  elm.classList.add(cls);
+  var dur = reduceMotion.matches ? 2000 : 1200;
+  if (elm._pbFlashTimer) clearTimeout(elm._pbFlashTimer);
+  elm._pbFlashTimer = setTimeout(function () { elm.classList.remove(cls); }, dur);
+}
+
+// flashChange：變動格強閃；父層鏈（事件的 ancestors）同色低透明度、由近到遠每 80ms 像漣漪往上。
+// 分頁在背景時不播動畫（只累積動態列表）。
+function flashChange(ev) {
+  if (document.hidden) return;
+  flashElement(rowForNode(ev.node_id), true);
+  var anc = ev.ancestors || [];
+  for (var i = anc.length - 1, k = 1; i >= 0; i--, k++) {
+    (function (id, delay) {
+      setTimeout(function () { flashElement(rowForNode(id), false); }, delay);
+    })(anc[i], 80 * k);
+  }
+}
+
+// 分頁回到前景「且」面板已展開 → 未讀清零（標題還原、小圓鈕歸零）；
+// 面板仍收合時不清零，跟 addFeed 的累加條件（背景或收合）對稱。
+document.addEventListener("visibilitychange", function () {
+  if (!document.hidden && !feedState.collapsed) { feedState.unread = 0; feedUpdateBadges(); }
+});
+
 /* ---- 啟動 ---- */
 // restoreLastPathIfRoot：進根網址`/`(沒帶專案/節點/查詢字串)時，若上次離開有記住畫面
 // (LAST_VIEW_KEY)，直接把網址列換成上次那個路徑，讓後面的 readURL() 照著解回去——
@@ -1174,6 +1758,9 @@ function restoreLastPathIfRoot() {
 function loadAll() {
   restoreLastPathIfRoot();
   readURL(); // 先解析網址（deep-link）：/、/專案、/專案/…/節點?tab=&status=
+  // P3：先連上即時通道（拿 URL 解析出的專案）再載資料；載入期間收到的事件先進 buffer，
+  // 載完由 liveReady() 依序重播，避免「載入完成」與「SSE 連上」之間的變動被漏掉。
+  connectEvents();
   // meta（type/owner 清單唯一來源）是加值資訊：失敗退回空清單，不拖垮整頁（fail-soft）。
   var metaReady = getJSON("/api/meta")
     .then(function (m) { state.meta = m || FALLBACK_META; })
@@ -1203,10 +1790,12 @@ function loadAll() {
       renderProgress();
       setUpdated();
       restoreView();
+      liveReady(); // 初次載入完成 → 開始套用即時事件（並重播載入期間暫存的）
     })
     .catch(function (err) {
       document.getElementById("tree").textContent = "";
       document.getElementById("tree").appendChild(el("div", "error", "載入失敗：" + err.message));
+      liveReady(); // 載入失敗也要放行，否則即時事件永遠卡在 buffer
     });
 }
 
@@ -1285,7 +1874,10 @@ document.getElementById("f-project").addEventListener("change", function (e) {
     host.textContent = "";
     host.appendChild(el("div", "empty", "從左側選一張單"));
   }
-  reloadProject();
+  // 切專案：重抓全樹＋加值資料（resyncAll），確保切過去就是最新——
+  // 不依賴即時事件已經把每個節點都補到（跨專案事件也在背景更新 state.tree，這裡是最後一道保險）。
+  resyncAll().then(function () { renderTree(); });
+  connectEvents(); // 全域連線，已是 no-op（只建一次）
 });
 document.getElementById("f-owner").addEventListener("change", function (e) {
   state.filterOwner = e.target.value;
@@ -1304,7 +1896,8 @@ window.addEventListener("popstate", function () {
   renderTree();
   if (state.selected) selectNode(state.selected);
   setActiveTab(state.activeTab);
-  reloadProject();
+  resyncAll().then(function () { renderTree(); });
+  connectEvents();
   state.suppressPush = false;
 });
 
@@ -1345,6 +1938,7 @@ if (window.matchMedia) {
   else if (mq.addListener) mq.addListener(onSystemChange);
 }
 applyTheme(currentTheme());
+feedInit(); // 即時動態卡片：還原收合狀態並綁事件（F2）
 
 loadAll();
 </script>

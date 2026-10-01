@@ -5,12 +5,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"project_board/internal/store"
 )
@@ -86,6 +88,9 @@ func TestCmdServe(t *testing.T) {
 	if !strings.Contains(ta.stderr(), "啟動") {
 		t.Errorf("應印啟動訊息，stderr=%q", ta.stderr())
 	}
+	if !strings.Contains(ta.stderr(), "owners：") {
+		t.Errorf("應印 owners 來源，stderr=%q", ta.stderr())
+	}
 
 	// listen 回真錯誤 → 執行錯誤（1）
 	ta.a.listen = func(*http.Server) error { return errors.New("boom") }
@@ -141,6 +146,9 @@ func TestCmdMCP(t *testing.T) {
 	if code := ta.run("mcp"); code != exitOK || !called {
 		t.Fatalf("code=%d called=%v stderr=%s", code, called, ta.stderr())
 	}
+	if !strings.Contains(ta.stderr(), "owners：") {
+		t.Errorf("mcp 啟動應印 owners 來源，stderr=%q", ta.stderr())
+	}
 
 	// 回錯 → 執行錯誤
 	ta.a.mcpRun = func(context.Context, *store.Store) error { return errors.New("stdio 壞了") }
@@ -158,5 +166,40 @@ func TestCmdMCP(t *testing.T) {
 	}
 	if code := ta.run("mcp", "--db", filepath.Join(blocked, "sub", "x.db")); code != exitErr {
 		t.Errorf("壞 DB code=%d", code)
+	}
+}
+
+// A dashboard holding /api/events open must not keep `pb serve` from shutting down:
+// Shutdown closes the SSE broadcaster first, so the stream handler returns.
+func TestServeShutdownWithOpenEventStream(t *testing.T) {
+	st, err := openStore(filepath.Join(t.TempDir(), "board.db"))
+	if err != nil {
+		t.Fatalf("openStore: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	srv := newServeServer(st, "127.0.0.1:0", "")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/api/events")
+	if err != nil {
+		t.Fatalf("GET /api/events: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("/api/events status = %d", resp.StatusCode)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown with an open event stream: %v (the stream kept serve alive)", err)
+	}
+	if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("Serve returned %v, want ErrServerClosed", err)
 	}
 }

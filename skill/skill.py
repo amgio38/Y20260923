@@ -2,9 +2,10 @@
 """project_board skill shim（thin）：把 `skill_invoke` 的 args 轉給 pb CLI／REST。
 
 執行策略（docs/INTERFACE.md §5）：
-  1. 找 `pb` binary：$PB_BIN → $PB_PROJECT/bin/pb → $PWD/bin/pb、$PWD/project_board/bin/pb
-     （再往上層找）→ PATH。不寫死特定機器的安裝路徑；跨機器／跨安裝位置時請設 $PB_PROJECT
-     （skill_invoke 的 cwd 是 skill 自己的目錄，不是專案根，所以找不到就都找不到，不會亂猜）。
+  1. 找 `pb` binary（依序）：$PB_BIN → $PB_PROJECT/bin/pb → $DEFAULT_PROJECT_DIR/bin/pb
+     → $PWD/bin/pb、$PWD/project_board/bin/pb（再往上層找）→ PATH。
+     cray 執行 skill 時 cwd 是 skill 自己的目錄（不是專案根），所以本機安裝靠
+     $DEFAULT_PROJECT_DIR 定位專案（原始碼出廠為 None；跨機器用 $PB_PROJECT 覆寫）。
   2. 找不到 binary → 打 REST（純 stdlib urllib；v1 **唯讀**，只有讀取類指令可用）。
   3. 兩者皆無 → 清楚錯誤 ＋ 提示 `go build -o bin/pb ./cmd/pb`。
 
@@ -14,6 +15,7 @@
 環境變數：
   PB_BIN       指定 binary 路徑（最優先）
   PB_PROJECT   專案根目錄（找 <root>/bin/pb）
+  DEFAULT_PROJECT_DIR 安裝點的預設專案根（原始碼＝None；安裝時可填本機路徑；$PB_PROJECT 可覆寫）
   PB_DB        SQLite 路徑；未設且 binary 為 <root>/bin/pb 時，自動帶 <root>/var/board.db
   PB_REST      REST base（預設 http://127.0.0.1:8787）
   PB_ACTOR     寫入操作 actor（預設 xiaoxia，CLI --actor 優先）
@@ -32,18 +34,25 @@ import urllib.request
 REST_BASE = os.environ.get("PB_REST", "http://127.0.0.1:8787").rstrip("/")
 REST_TIMEOUT = 10.0
 DEFAULT_ACTOR = os.environ.get("PB_ACTOR", "xiaoxia")
-# skill_invoke 的 cwd 是「skill 自己的目錄」（cray skill.rs：cwd=skill dir），不是專案根，
-# 所以找 binary 一定要靠 PB_PROJECT／PATH／往上層找 cwd 這幾條路（見 candidate_paths()），
-# 不寫死特定機器的安裝路徑——寫死的話搬到別台機器／別的安裝路徑就直接找不到。
 
-READ_CMDS = ("tree", "get", "history", "stats", "search", "healthz")
-WRITE_CMDS = ("create", "update", "move", "assign", "link", "verify", "comment", "hook", "unhook", "commit", "repo")
-OTHER_CMDS = ("serve", "help")
-# hooks：讀取類，但 REST v1 沒有對應端點，只能用 binary（v0.3 接單 hook）。
-BINARY_ONLY_CMDS = ("hooks",)
-ALL_CMDS = READ_CMDS + WRITE_CMDS + OTHER_CMDS + BINARY_ONLY_CMDS
+# DEFAULT_PROJECT_DIR：找 pb 的退路之一（安裝點的預設專案根）。
+# 為什麼需要：cray 執行 skill 時 cwd 是 skill 自己的目錄（cray skill.rs：cwd=skill dir），
+# 不是專案根，而它帶的 WORKSPACE_DIR 實測是 skills 根（<stateDir>/skills，不是工作區根）——
+# 兩者都不能定位專案；沒有這條就只能落到 PATH 上別的 pb，且推不出 <root>/var/board.db。
+# 原始碼保持 None（不寫死任何機器的路徑）；由安裝步驟在「安裝版」填成本機專案路徑
+# （例：小蝦＝/root/udn/Campaign/Y20260314_BOT/project_board）。可用 $PB_PROJECT 覆寫。
+DEFAULT_PROJECT_DIR = None
 
-STATUS_ORDER = ("todo", "in_progress", "review", "blocked", "hold", "done", "cancel")
+# 讀取類：找不到 binary 時可退回 REST（v1 唯讀）。
+READ_CMDS = ("tree", "get", "history", "stats", "search", "healthz", "deps", "checklist", "report")
+# 寫入類：一定要 binary（REST v1 唯讀）。
+WRITE_CMDS = ("create", "update", "move", "assign", "link", "verify", "comment",
+              "hook", "unhook", "commit", "repo", "import")
+# 注意：這裡**沒有**子命令白名單（2026-09-28 拿掉）。舊版用 ALL_CMDS 逐一列舉，
+# pb 每長一個新子命令（hook／checklist／import／commit／repo／version…）就被擋在門外。
+# 現在有 binary 就一律通用轉發，讓 pb 自己判用法——skill 不再需要跟著改。
+
+STATUS_ORDER = ("todo", "in_progress", "review", "blocked", "hold", "done", "cancel", "archived")
 
 
 class Usage(Exception):
@@ -63,10 +72,13 @@ def candidate_paths():
     env = os.environ.get("PB_BIN")
     if env:
         yield env
-    # 專案根：只認 $PB_PROJECT（不寫死特定機器的安裝路徑，見上面常數區的說明）。
+    # 專案根：$PB_PROJECT（可跨機器覆寫）。
     proj = os.environ.get("PB_PROJECT")
     if proj:
         yield os.path.join(proj, "bin", "pb")
+    # 安裝點填的預設專案根（原始碼為 None；安裝版填本機路徑，見 DEFAULT_PROJECT_DIR 說明）。
+    if DEFAULT_PROJECT_DIR:
+        yield os.path.join(DEFAULT_PROJECT_DIR, "bin", "pb")
     cwd = os.getcwd()
     yield os.path.join(cwd, "bin", "pb")
     yield os.path.join(cwd, "project_board", "bin", "pb")
@@ -301,11 +313,24 @@ def run_rest(cmd, args):
         data = http_get("/api/stats", {"project": opts.get("--project")})
         emit_json(data) if want_json else render_stats(data)
         return 0
+    if cmd == "deps":
+        opts, _ = split_opt(args, {"--project"})
+        emit_json(http_get("/api/deps", {"project": opts.get("--project")}))
+        return 0
+    if cmd == "checklist":
+        opts, _ = split_opt(args, {"--project"})
+        emit_json(http_get("/api/checklist", {"project": opts.get("--project")}))
+        return 0
+    if cmd == "report":
+        opts, _ = split_opt(args, {"--project", "--week"})
+        emit_json(http_get("/api/report", {"project": opts.get("--project"), "week": opts.get("--week")}))
+        return 0
     if cmd == "search":
-        opts, pos = split_opt(args, {"--project"})
-        if not pos:
-            raise Usage("search 需要 <query>")
-        data = http_get("/api/search", {"q": pos[0], "project": opts.get("--project")})
+        opts, pos = split_opt(args, {"--project", "--tag", "--owner", "--status"})
+        if not pos and (opts.get("--owner") or opts.get("--tag") or opts.get("--status")):
+            raise Usage("REST v1 的 /api/search 需要 query；--owner／--tag／--status 請用 binary（go build -o bin/pb ./cmd/pb）")
+        data = http_get("/api/search", {"q": pos[0] if pos else "", "project": opts.get("--project"),
+                                        "status": opts.get("--status")})
         emit_json(data) if want_json else render_search(data)
         return 0
     raise Usage("REST 不支援 %s" % cmd)
@@ -318,28 +343,42 @@ def run_rest(cmd, args):
 HELP = """project_board — 團隊單板（skill）
 
 用法：skill_invoke("project_board", args="<子指令> [參數]")
-  tree   [--project <id>] [--status <s>] [--owner <o>] [--type <t>] [--json]
-  get    <id> [--json]
-  create --type <t> --title <s> --actor <a> [--parent <id>] [--id <id>] [--owner <o>] [--priority p]
-  update <id> --actor <a> [--title s] [--body s] [--owner o] [--priority p] [--tags s]
-  move   <id> <status> --actor <a> [--note s]
-  assign <id> <owner> --actor <a>
-  link   <id> --kind <k> --target <s> --actor <a> [--note s]
-  verify <id> --note <證據> --actor <a>          # --evidence 亦可（別名）
-  comment <id> <text> --actor <a>
-  hook   <id> --target <agent> --actor <a> [--harness herdr]   # 接單必 hook；異動時喚醒該 agent
-  unhook <id> --target <agent> --actor <a> [--harness herdr]
-  hooks  [<id>] [--json]                          # 列出訂閱（需 binary）
-  commit attach [--sha <s>] [--message-file <f>] [--dry-run] --actor <a>   # 從 commit 訊息掛 link commit（需 binary）
-  repo   set <project-id> --url <url> [--path <p>] --actor <a>            # 設專案 repo（需 binary）
-  repo   show <project-id> [--json]                                       # 看專案 repo
-  search <query> [--project <id>] [--json]
-  history <id> [--limit n] [--json]
-  stats  [--project <id>] [--json]
-  serve  [--addr 127.0.0.1:8787]                 # 背景啟動：pid→var/serve.pid、log→var/serve.log；停止 kill $(cat var/serve.pid)
-  help
+※ 找得到 pb binary 時＝**通用轉發**：pb 有什麼子命令就能用什麼（skill 不再逐一白名單）。
+   下列即 pb 目前全部子命令，與 `pb help` 同源。
 
-寫入類指令要有 pb binary；REST（v1）唯讀只供讀取類指令退回。
+ 讀取
+  tree      [--project <id>] [--status <s>] [--owner <o>] [--type <t>] [--tag <t>] [--depth n] [--json]
+  get       <id> [--json]
+  search    [query] [--project <id>] [--tag <s>] [--owner <o>] [--status s1,s2] [--json]
+            # 「我的未結單」＝ search --owner xiaoxia --status todo,in_progress,review,blocked
+  history   <id> [--limit n] [--json]
+  stats     [--project <id>] [--json]
+  deps      [--project <id>] [--json]
+  checklist [--project <id>] [--json]
+  report    [--week YYYY-MM-DD] [--project <id>] [--json]
+  hooks     [<id>] [--json]
+
+ 寫入（皆須 --actor <a>）
+  create    --type <t> --title <s> [--parent <id>] [--id <id>] [--owner <o>] [--priority p] [--tags s] [--body s]
+  update    <id> [--title s] [--body s] [--owner o] [--priority p] [--tags s] [--sort n] [--if-unmodified-since <ts>]
+  move      <id> <status> [--note s] [--if-unmodified-since <ts>]
+  assign    <id> <owner>
+  link      <id> --kind <k> --target <s> [--note s]
+  verify    <id> --note <證據>                 # --evidence 亦可（別名）；收單請走 MCP pb_verify
+  comment   <id> <text>
+  hook      <id> --target <agent> [--harness herdr]
+  unhook    <id> --target <agent> [--harness herdr]
+  commit    attach [--sha <s>] [--message-file <f>] [--dry-run]
+  repo      set <project-id> --url <url> [--path <p>] ／ repo show <project-id>
+  import    (見 pb help import)
+  export    (見 pb help export)
+
+ 維運
+  init ／ seed ／ serve [--addr 127.0.0.1:8787] ／ mcp ／ version ／ help
+  serve：背景啟動（pid→var/serve.pid、log→var/serve.log）；停止 kill $(cat var/serve.pid)
+
+寫入類要有 pb binary；REST（v1）唯讀只供讀取類（tree/get/history/stats/search/deps/checklist/report/healthz）退回。
+REST 的 /api/search 仍要 query；--owner／--tag／--status 單獨查請用 binary。
 """
 
 
@@ -357,40 +396,35 @@ def main(argv):
     if not args or args[0] in ("help", "-h", "--help"):
         return cmd_help()
     cmd = args[0]
-    if cmd not in ALL_CMDS:
-        print("錯誤：未知子指令 %r" % cmd)
-        return cmd_help(1)
 
     pb = find_pb()
     if pb:
         if cmd == "serve":
             return run_serve(pb, args[1:])
+        # 通用轉發：不限子命令，交給 pb 自己判（新命令不必先來這裡登記）。
         return run_binary(pb, args)
 
-    if cmd in WRITE_CMDS:
-        return fail("找不到 pb binary（$PB_BIN／$PB_PROJECT/bin/pb／./bin/pb／PATH）；"
-                    "%s 是寫入指令，REST v1 唯讀不能替代。\n"
-                    "請先建 binary：go build -o bin/pb ./cmd/pb" % cmd)
-    if cmd in BINARY_ONLY_CMDS:
-        return fail("找不到 pb binary（$PB_BIN／$PB_PROJECT/bin/pb／./bin/pb／PATH）；"
-                    "%s 需要 binary（REST v1 沒有這個端點）。\n"
-                    "請先建 binary：go build -o bin/pb ./cmd/pb" % cmd)
+    # 沒有 binary。
     if cmd == "serve":
         return fail("找不到 pb binary，serve 需要 binary。\n"
                     "請先建：go build -o bin/pb ./cmd/pb")
-
-    try:
-        return run_rest(cmd, args[1:])
-    except Usage as e:
-        return fail(str(e))
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return fail("查無資料（HTTP 404）")
-        return fail("REST 回應 HTTP %s %s" % (e.code, e.reason))
-    except urllib.error.URLError as e:
-        return fail("找不到 pb binary（$PB_BIN／$PB_PROJECT/bin/pb／./bin/pb／PATH），"
-                    "REST 也連不上 %s（%s）。\n"
-                    "請先建 binary：go build -o bin/pb ./cmd/pb，或起 server：pb serve" % (REST_BASE, e.reason))
+    if cmd in READ_CMDS:
+        try:
+            return run_rest(cmd, args[1:])
+        except Usage as e:
+            return fail(str(e))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return fail("查無資料（HTTP 404）")
+            return fail("REST 回應 HTTP %s %s" % (e.code, e.reason))
+        except urllib.error.URLError as e:
+            return fail("找不到 pb binary（$PB_BIN／$PB_PROJECT/bin/pb／$DEFAULT_PROJECT_DIR/bin/pb／./bin/pb／PATH），"
+                        "REST 也連不上 %s（%s）。\n"
+                        "請先建 binary：go build -o bin/pb ./cmd/pb，或起 server：pb serve" % (REST_BASE, e.reason))
+    kind = "寫入指令" if cmd in WRITE_CMDS else "子命令"
+    return fail("找不到 pb binary（$PB_BIN／$PB_PROJECT/bin/pb／$DEFAULT_PROJECT_DIR/bin/pb／./bin/pb／PATH）；"
+                "%s「%s」需要 binary（REST v1 唯讀沒有這個端點）。\n"
+                "請先建 binary：go build -o bin/pb ./cmd/pb" % (kind, cmd))
 
 
 if __name__ == "__main__":

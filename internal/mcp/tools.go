@@ -322,8 +322,8 @@ var tools = []toolDef{
 		Schema: schema(map[string]any{
 			"actor":               strProp("寫入者，須在 owner 名冊內：xiaoxia、kaimake、kaimadi、yilong、claude、human、unassigned"),
 			"id":                  strProp("節點 id，例如 Y20260920/REQ-MCP-TOOL-DESC/ISSUE-TRANSITION-VERIFY-DESC"),
-			"to":                  strProp("目標狀態，只能是 todo、in_progress、review、blocked、hold、done、cancel 其中一個。允許的邊：todo→in_progress|blocked|hold|cancel；in_progress→review|blocked|hold|cancel；review→done|in_progress|blocked|cancel；blocked→in_progress|hold|cancel；hold→todo|in_progress|cancel；done→in_progress；cancel→todo。todo、in_progress、blocked、hold、cancel 直接 to=done 會被拒。收單不要用 to=done，改叫 pb_verify。"),
-			"note":                strProp("說明。轉 blocked 時必填（或該節點已有 depends_on）；done→in_progress 重開時必填；其他轉移可省略"),
+			"to":                  strProp("目標狀態，只能是 todo、in_progress、review、blocked、hold、done、cancel、archived 其中一個。允許的邊：todo→in_progress|blocked|hold|cancel；in_progress→review|blocked|hold|cancel；review→done|in_progress|blocked|cancel；blocked→in_progress|hold|cancel；hold→todo|in_progress|cancel；done→in_progress|archived；cancel→todo；archived→done。todo、in_progress、blocked、hold、cancel 直接 to=done 會被拒；只有 done 能轉 archived，其他狀態要先轉成 done 才能封存；archived 也只能先轉回 done 才能再變動。收單不要用 to=done，改叫 pb_verify。"),
+			"note":                strProp("說明。轉 blocked 時必填（或該節點已有 depends_on）；done→in_progress 重開時必填；done→archived 封存時必填；其他轉移可省略"),
 			"expected_updated_at": strProp("樂觀鎖，值為節點目前的 updated_at（RFC3339）。帶了且不符回 conflict，不寫入"),
 		}, "actor", "id", "to"),
 		Handle: func(ctx context.Context, st *store.Store, args map[string]any) (any, error) {
@@ -500,12 +500,13 @@ var tools = []toolDef{
 	},
 	{
 		Name: "pb_search",
-		Desc: "全文搜尋（FTS5 trigram：title／body／tags 子字串，中文子字串可查；3 字元以下退回 LIKE）。唯讀。query 可省略，但 query／project／tag／owner 至少一個。tag 是逗號分隔欄位的整段相符（非子字串），owner 全等。回精簡陣列（id／type／status／owner／title，不含 body）。",
+		Desc: "全文搜尋（FTS5 trigram：title／body／tags 子字串，中文子字串可查；3 字元以下退回 LIKE）。唯讀。query 可省略，但 query／project／tag／owner／status 至少一個。tag 是逗號分隔欄位的整段相符（非子字串），owner 全等；status 為逗號分隔多選（如 todo,in_progress,review,blocked）——列「某人未結單」＝owner＋status。回扁平精簡陣列（id／type／status／owner／title，不含 body），不補祖先。",
 		Schema: schema(map[string]any{
 			"query":   strProp("關鍵字，可省略"),
 			"project": strProp("限 project id，不限可省略"),
 			"tag":     strProp("標籤整段相符（逗號分隔欄位，非子字串）"),
 			"owner":   strProp("owner 全等"),
+			"status":  strProp("狀態多選（逗號分隔，如 todo,in_progress,review,blocked）"),
 		}),
 		Handle: func(ctx context.Context, st *store.Store, args map[string]any) (any, error) {
 			query, _ := optStr(args, "query")
@@ -516,10 +517,18 @@ var tools = []toolDef{
 			tag = strings.TrimSpace(tag)
 			owner, _ := optStr(args, "owner")
 			owner = strings.TrimSpace(owner)
-			if query == "" && project == "" && tag == "" && owner == "" {
-				return nil, fmt.Errorf("query／project／tag／owner 至少要有一個")
+			status, _ := optStr(args, "status")
+			status = strings.TrimSpace(status)
+			if query == "" && project == "" && tag == "" && owner == "" && status == "" {
+				return nil, fmt.Errorf("query／project／tag／owner／status 至少要有一個")
 			}
-			nodes, err := st.SearchAdvanced(ctx, query, project, tag, owner)
+			statuses, err := domain.ParseStatusList(status)
+			if err != nil {
+				return nil, err
+			}
+			nodes, err := st.SearchFiltered(ctx, store.SearchFilter{
+				Query: query, Project: project, Tag: tag, Owner: owner, Statuses: statuses,
+			})
 			if err != nil {
 				return nil, err
 			}

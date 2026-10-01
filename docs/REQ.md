@@ -77,7 +77,7 @@
 | PB-FR-17 | **自我驗收標記** | `verify` 時 `actor==owner` 自動標記 `self-verified`，`pb_stats`／dashboard 顯示張數（不阻擋）；克勞德補充，見 §11.2 |
 | PB-FR-18 | **型別可擴充化** | node type 存在 `node_types` 表（資料驅動），不再是 schema 寫死的 CHECK enum；新增型別（如 `bug`／`plan`）只需 INSERT 一筆，不必動 schema／Go switch。見 `REQ-V05-NODE-TYPE-REGISTRY` |
 | PB-FR-19 | **git 整合** | commit 訊息帶單號自動掛連結（`post-commit` hook → `pb_commit_attach`／`pb commit attach`，只掛 link 不動狀態）；`commit-msg` hook 提醒沒帶單號；`pb_set_repo` 設定 project↔repo 對應；GitHub webhook 端點（`/api/integrations/github`，`GH_WEBHOOK_SECRET` 驗簽，push/PR 事件自動 link）。見 `REQ-V04-GIT-INTEGRATION`、`docs/GIT_INTEGRATION.md` |
-| PB-FR-20 | **Hook 喚醒（真的喚醒，不是只訂閱）** | `pb_hook` 訂閱節點狀態變動；長駐 `pb serve` 背景每 2 秒輪詢，偵測到訂閱節點異動時**真的** `exec herdr agent prompt <target> <訊息>` 叫醒對應 harness（5 秒逾時，失敗只記 log 不擋服務）。喚醒的責任固定在 `pb serve`，改狀態的行程不直接呼叫 herdr。見 `REQ-V03-HOOK`、`cmd/pb/hookloop.go` |
+| PB-FR-20 | **Hook 喚醒（真的喚醒，不是只訂閱）** | `pb_hook` 訂閱節點狀態變動；長駐 `pb serve` 背景每 2 秒輪詢，偵測到訂閱節點異動時**真的** `exec herdr agent prompt <target> <訊息>` 叫醒對應 harness（5 秒逾時，失敗只記 log 不擋服務）；target 回 agent_not_found 時改以 `herdr pane list` 解析唯一 pane id 重送（name／label → agent 種類，多筆命中拒絕）。喚醒的責任固定在 `pb serve`，改狀態的行程不直接呼叫 herdr。見 `REQ-V03-HOOK`、`cmd/pb/hookloop.go` |
 
 ## 6. 非功能需求（NFR）
 

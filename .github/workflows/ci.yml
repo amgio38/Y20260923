@@ -1,0 +1,125 @@
+name: ci
+
+# 每次推到 main 和每個 pull request 都跑。測的是：
+#   - 程式碼：gofmt、go vet、全部測試；
+#   - 能不能在各平台編譯（Linux／macOS／Windows × amd64／arm64）；
+#   - 安裝腳本（install.sh、install.ps1）——它們是使用者第一個碰到的東西，網路用假的取代，
+#     對著真的打包出來的壓縮檔跑。
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一個分支有新的推送，就取消還在跑的舊的：過時的結果沒有價值，排隊只是浪費分鐘數。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: gofmt, vet, test, installers (linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "這些檔案沒有 gofmt 過："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: shell scripts parse
+        run: |
+          for f in install.sh service.sh scripts/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: install.sh tests (network stubbed)
+        run: bash scripts/install-sh.test.sh
+
+      - name: install.ps1 tests (PowerShell on Linux, network replaced by local files)
+        shell: pwsh
+        run: ./scripts/install-ps1.test.ps1
+
+  cross-build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: windows, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go build
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -o /dev/null ./cmd/pb
+
+  windows:
+    name: windows (build, install.ps1 on Windows PowerShell 5.1 and 7)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go build and vet
+        run: |
+          go build ./...
+          go vet ./...
+      # install.ps1 是 Windows 使用者的入口，要在真的 Windows PowerShell（5.1）和 PowerShell 7 上各跑一次。
+      - name: install.ps1 tests (PowerShell 7)
+        shell: pwsh
+        run: ./scripts/install-ps1.test.ps1
+      - name: install.ps1 tests (Windows PowerShell 5.1)
+        shell: powershell
+        run: ./scripts/install-ps1.test.ps1
+
+  # 資訊用，不擋合併：把「測試在 Windows／macOS 上全過嗎」的實際答案攤出來。
+  # 確定都過了以後，把 continue-on-error 拿掉就變成必須通過。
+  other-os-tests:
+    name: go test on ${{ matrix.os }} (informational)
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go test
+        run: go test ./...

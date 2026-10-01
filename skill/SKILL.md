@@ -23,10 +23,13 @@ go build -o bin/pb ./cmd/pb
 ./bin/pb init && ./bin/pb seed
 ```
 
-`skill.py` 會自己找 `pb`（依序）：`$PB_BIN` → `$PB_PROJECT/bin/pb` → **內建預設 `/usr/account/project_board/bin/pb`** → `$PWD/bin/pb`／`$PWD/project_board/bin/pb`（含往上層找）→ `PATH`。
-⚠ `skill_invoke` 的 cwd 是**skill 自己的目錄**（`/root/.cray/skills/dynamic/project_board`），不是專案，所以**不能只靠相對路徑找 binary**——內建絕對路徑就是為此；專案搬家時用 `PB_PROJECT` 覆寫。
-找不到 binary 才退回打 REST（`$PB_REST`，預設 `http://127.0.0.1:8787`）——**REST v1 唯讀**，只有讀取類（`tree`／`get`／`history`／`stats`／`search`／`healthz`）可用；寫入類一定要有 binary。
+`skill.py` 會自己找 `pb`（依序）：`$PB_BIN` → `$PB_PROJECT/bin/pb` → `$DEFAULT_PROJECT_DIR/bin/pb` → `$PWD/bin/pb`／`$PWD/project_board/bin/pb`（含往上層找）→ `PATH`。原始碼的 `DEFAULT_PROJECT_DIR` 出廠為 `None`（**不寫死機器路徑**）；**安裝版**把它填成本機專案根。
+⚠ `skill_invoke` 的 cwd 是**skill 自己的目錄**（`/root/.cray/skills/dynamic/project_board`），不是專案，所以**不能只靠相對路徑找 binary**；cray 帶的 `WORKSPACE_DIR` 實測是 **skills 根**（`/root/.cray/skills`，非工作區根）、靠不住——本機安裝就是靠 `DEFAULT_PROJECT_DIR` 定位專案（跨機器改用 `$PB_PROJECT` 覆寫）。
+找不到 binary 才退回打 REST（`$PB_REST`，預設 `http://127.0.0.1:8787`）——**REST v1 唯讀**，只有讀取類（`tree`／`get`／`history`／`stats`／`search`／`deps`／`checklist`／`report`／`healthz`）可用；寫入類一定要有 binary。
 兩者都沒有會回：「請先建 binary：`go build -o bin/pb ./cmd/pb`，或起 server：`pb serve`」。
+
+**通用轉發（2026-09-28 改）**：找得到 binary 時，**任何 `pb <子指令>` 都直接轉發**——skill 不再維護子命令白名單（舊版用白名單，pb 每長一個新命令就要改 skill，`hook`／`checklist`／`import`／`commit`／`repo`／`version` 就是這樣被擋在門外的）。
+→ 判準很簡單：**`pb help` 有的，`skill_invoke` 就有**。下表只是常用清單，非窮舉。
 
 binary 若是 `<root>/bin/pb`，且未設 `PB_DB`，`skill.py` 會自動帶 `PB_DB=<root>/var/board.db`——所以 `skill_invoke` 從任何 cwd 都打到專案 DB（就是上面 `init`／`seed` 那顆）。
 
@@ -49,7 +52,14 @@ binary 若是 `<root>/bin/pb`，且未設 `PB_DB`，`skill.py` 會自動帶 `PB_
 | `repo show <project-id> [--json]` | 看專案 repo |
 | `verify <id> --note "覆蓋率 98%、-race 乾淨" --actor xiaoxia` | 驗收 → `done`（`--evidence` 亦可，別名） |
 | `comment <id> "…" --actor xiaoxia` | 留言 |
-| `search "admin-bff" [--project Y20260916]` | 關鍵字 |
+| `search "admin-bff" [--project Y20260916] [--tag t] [--owner xiaoxia] [--status todo,in_progress,review,blocked]` | 關鍵字／條件查詢；`--status` 逗號多選。「我的未結單」＝`search --owner xiaoxia --status todo,in_progress,review,blocked` |
+| `deps [--project Y20260916]` | depends_on 依賴清單 |
+| `checklist [--project Y20260916]` | 母表項目清單 |
+| `report [--week YYYY-MM-DD] [--project Y20260916]` | 週報（做了什麼／進行中／下週計畫） |
+| `init` ／ `seed` | 第一次建 DB／建第一個 project（需 binary） |
+| `import <目錄> [--project X] [--dry-run]` | 從 dev_docs 目錄匯入節點（只匯入、不改原件） |
+| `export <id> [--out dir]` | 匯出節點到檔案（預設 `var/export/`） |
+| `version` | pb 版號 |
 | `history <id> [--limit n]` | 事件流 |
 | `stats [--project Y20260916]` | 各狀態計數／每人未結案張數／REQ 進度／自我驗收張數 |
 | `serve [--addr 127.0.0.1:8787]` | **背景**啟動 pb serve（REST＋dashboard＋MCP）：pid 寫 `<root>/var/serve.pid`、log 寫 `<root>/var/serve.log`；**停止：`kill $(cat var/serve.pid)`**（需 binary） |
@@ -83,12 +93,14 @@ binary 若是 `<root>/bin/pb`，且未設 `PB_DB`，`skill.py` 會自動帶 `PB_
 ## 狀態機（別亂跳）
 
 ```
-todo ⬜ → in_progress 🔶 → review 👀 → done ✅
-   ↘        ↘              ↘
+todo ⬜ → in_progress 🔶 → review 👀 → done ✅ → archived 📦
+   ↘        ↘              ↘             ↖________/
     blocked 🚧 ─→ in_progress ； 任何 → hold ⏸ ／ cancel ❌
 ```
 
 - `done` **只能從 `review` 進**，且正規路徑是 `verify`（要附證據）。
+- `archived`（封存）**只能從 `done` 進**，代表「驗證無誤、收好歸檔」；`move <id> archived --note "..."` 且 note 必填。
+  可從 `archived` 轉回 `done`（`move <id> done`，免 note）；archived 不能直接跳去其他狀態。
 - 非法轉移會被拒（回錯誤），**不要硬改 DB**。
 
 ## owner 名冊
@@ -113,7 +125,7 @@ skill_invoke("project_board", args='verify Y20260916/REQ-X/ISSUE-Y --note "test 
 | 訊息 | 原因 | 處置 |
 |---|---|---|
 | `錯誤：找不到 pb binary …` | binary 沒建、REST 也沒起 | `go build -o bin/pb ./cmd/pb`（或起 `serve`） |
-| `錯誤：… create 是寫入指令，REST v1 唯讀不能替代` | 沒 binary 又想寫入 | 建 binary；REST 只給讀取類退回 |
+| `錯誤：… 「create」需要 binary（REST v1 唯讀沒有這個端點）` | 沒 binary 又想跑寫入／REST 沒有的子命令 | 建 binary；REST 只給讀取類退回 |
 | `錯誤：查無資料（HTTP 404）` | REST 找不到該節點 | `tree` 確認 ID |
 | `no such node` / `illegal transition` / `id exists` | CLI 回報（ID 打錯／跳步／撞名） | 見下；非法轉移不硬改 |
 | `connection refused` | 走 REST 但 server 沒起 | 起 `serve` 或改用 `pb` binary |

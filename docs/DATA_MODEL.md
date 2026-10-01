@@ -1,6 +1,6 @@
 # DATA_MODEL.md — ProjectBoard 資料模型
 
-> 真相源：`var/board.db`（SQLite 3，WAL）。本檔為 schema 權威版，目前 `schema_version=6`（見
+> 真相源：`var/board.db`（SQLite 3，WAL）。本檔為 schema 權威版，目前 `schema_version=8`（見
 > `internal/store/migrations/`）；改到 schema 時這份文件要跟著更新，不要只改 migration。
 
 ---
@@ -26,7 +26,7 @@ CREATE TABLE nodes (
   parent_id  TEXT REFERENCES nodes(id) ON DELETE RESTRICT,   -- 根為 NULL
   title      TEXT NOT NULL,
   status     TEXT NOT NULL DEFAULT 'todo'
-             CHECK (status IN ('todo','in_progress','review','blocked','hold','done','cancel')),
+             CHECK (status IN ('todo','in_progress','review','blocked','hold','done','cancel','archived')),
   owner      TEXT NOT NULL DEFAULT 'unassigned',
   priority   TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('high','medium','low')),
   tags       TEXT NOT NULL DEFAULT '',          -- 逗號分隔
@@ -131,8 +131,11 @@ CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
                 ┌───────────────────────────────┐
                 ▼                               │
   todo ──► in_progress ──► review ──► done ─────┘ (reopen)
-    │           │            │
-    │           │            │
+    │           │            │          │
+    │           │            │          ▼
+    │           │            │        archived (封存)
+    │           │            │          ▲
+    │           │            │          │ (unarchive)
     └───────────┴────────────┴──► blocked ──► in_progress
                                   │
         任何狀態 ──► hold（暫緩／上線前才做）
@@ -150,6 +153,7 @@ CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 | `hold` | ⏸ | 暫緩（上線前才做／等外部） |
 | `done` | ✅ | 完成 |
 | `cancel` | ❌ | 不做 |
+| `archived` | 📦 | 封存（`done` 驗證無誤後手動收檔） |
 
 **允許的轉移**（其餘一律拒絕）
 
@@ -160,10 +164,14 @@ CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 | `review` | `done`、`in_progress`、`blocked`、`cancel` |
 | `blocked` | `in_progress`、`hold`、`cancel`（**轉入 `blocked` 須附 `note` 或已存在 `depends_on` link，見 §11.3**） |
 | `hold` | `todo`、`in_progress`、`cancel` |
-| `done` | `in_progress`（reopen，需 `note`） |
+| `done` | `in_progress`（reopen，需 `note`）、`archived`（封存，需 `note`） |
 | `cancel` | `todo`（revive） |
+| `archived` | `done`（unarchive，免 `note`） |
 
 > `done` 只能從 `review` 進（＝必經驗收）；`verify()` 是唯一把 `review`→`done` 的正規路徑。
+> `archived` 只能從 `done` 進，且只能轉回 `done`——不能跳過 `done` 直接封存，封存後也不能直接跳去其他狀態；
+> 這是「done 的封存態」，統計口徑（手上未結案張數、REQ 完成度、自我驗收稽核）一律把 `archived` 當 `done` 算，
+> 不算未結案、不從分子/稽核清單漏掉（見 `internal/store/query.go`）。
 
 ---
 
@@ -186,7 +194,11 @@ id 的形狀由該 type 在 `node_types`（§2a）的 `id_shape` 決定，**不�
 - 若撞名，`create` 回錯誤（不自動加尾碼，避免失控）。
 - **省略 `--id`／`id` 參數時的自動生成規則**（見 §11.5）：由 `title` slugify（轉大寫、非 `[A-Z0-9]` 一律轉 `-`、連續 `-` 收斂成一個、去頭尾 `-`）產生 `SLUG`／`KEY`，再依 `id_shape` 接上 `parent`／`PREFIX`。撞名一樣直接回錯誤，呼叫端需換 `title` 或改帶明確 `--id`。
 
-## 8. owner 名冊（固定清單）
+## 8. owner 名冊（可由設定覆寫）
+
+> 下表是**現行團隊**的名冊，**不是寫死在原始碼裡**：載入順序為 `PB_OWNERS`（env）→
+> `PB_OWNERS_FILE`（env）→ cwd 的 `owners.txt` → pb 執行檔所屬專案根的 `owners.txt`，
+> 都沒有才只剩 `unassigned`（見 `README.md`、`OPERATIONS.md` §2.2）。
 
 | 代號 | 對象 |
 |---|---|

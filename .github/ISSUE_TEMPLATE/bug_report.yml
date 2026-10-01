@@ -1,0 +1,75 @@
+name: 問題回報（Bug）
+description: 有東西不如文件所說的運作
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        謝謝你花時間回報。資訊越完整，越能重現。
+        **不要貼密碼、token 或內部資料。** 貼日誌前先檢查一遍。
+        安全問題請用 issue 選單上的「私下回報」，不要開公開 issue。
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 執行 `pb version` 的輸出。
+      placeholder: "V0.20260928.006"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: 怎麼安裝的？
+      options:
+        - install.sh（預編譯版）
+        - install.ps1（預編譯版）
+        - install.sh / install.ps1（從原始碼編譯）
+        - 自己 clone 後 make build
+        - 其他
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: 作業系統與 CPU
+      description: 例如「Ubuntu 24.04 x86_64」、「macOS 15 arm64」、「Windows 11 x64」。
+    validations:
+      required: true
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: 怎麼啟動的？
+      options:
+        - ./service.sh start
+        - pb serve（前景）
+        - pb mcp（給 AI 工具用）
+        - 只用命令列（pb create / pb tree …）
+        - 其他
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 發生了什麼？
+      description: 附上你下的指令或操作，以及完整的錯誤訊息。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 你預期會怎樣？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 重現步驟
+      description: 最短、能讓別人照做就重現的步驟。
+      placeholder: |
+        1. ...
+        2. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日誌
+      description: 用 service.sh 啟動的話是 `var/serve.log` 的最後幾十行。
+      render: text

@@ -14,7 +14,7 @@ type StatusDef struct {
 	Sort  int    // 顯示順序（1 起算）
 }
 
-// StatusDefs 是 7 種狀態的顯示 metadata，順序即顯示順序（sort 1..7）。
+// StatusDefs 是 8 種狀態的顯示 metadata，順序即顯示順序（sort 1..8）。
 // 與 dashboard.html 舊有的 `var STATUS` 一字對應；2026-09-22 起改由 `/api/meta`
 // 供應，前端不再自存一份字面量（跟 BuiltinTypeDefs 同樣的資料化模式）。
 func StatusDefs() []StatusDef {
@@ -26,5 +26,6 @@ func StatusDefs() []StatusDef {
 		{Key: StatusHold, Label: "暫緩", Icon: "◌", Color: "#80868b", Sort: 5},
 		{Key: StatusDone, Label: "完成", Icon: "✔", Color: "#188038", Sort: 6},
 		{Key: StatusCancel, Label: "不做", Icon: "✕", Color: "#9aa0a6", Sort: 7},
+		{Key: StatusArchived, Label: "封存", Icon: "📦", Color: "#795548", Sort: 8},
 	}
 }

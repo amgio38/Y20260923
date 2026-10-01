@@ -21,9 +21,10 @@ var allStatuses = []Status{
 	StatusHold,
 	StatusDone,
 	StatusCancel,
+	StatusArchived,
 }
 
-// legalTransitions 是 §6 表的期望合法集合（from→to），共 20 組。
+// legalTransitions 是 §6 表的期望合法集合（from→to），共 22 組。
 var legalTransitions = map[[2]Status]bool{
 	{StatusTodo, StatusInProgress}: true,
 	{StatusTodo, StatusBlocked}:    true,
@@ -49,13 +50,16 @@ var legalTransitions = map[[2]Status]bool{
 	{StatusHold, StatusCancel}:     true,
 
 	{StatusDone, StatusInProgress}: true,
+	{StatusDone, StatusArchived}:   true,
 
 	{StatusCancel, StatusTodo}: true,
+
+	{StatusArchived, StatusDone}: true,
 }
 
 func TestAllStatusesKnown(t *testing.T) {
-	if len(allStatuses) != 7 {
-		t.Fatalf("狀態數應為 7，實得 %d（§6 表有增減？同步更新 allowedTransitions）", len(allStatuses))
+	if len(allStatuses) != 8 {
+		t.Fatalf("狀態數應為 8，實得 %d（§6 表有增減？同步更新 allowedTransitions）", len(allStatuses))
 	}
 	seen := map[Status]bool{}
 	for _, s := range allStatuses {
@@ -64,14 +68,14 @@ func TestAllStatusesKnown(t *testing.T) {
 		}
 		seen[s] = true
 	}
-	// 合法組數鎖死 20：§6 表增減任一條，此數即變，逼實作者有意識地改。
-	if len(legalTransitions) != 20 {
-		t.Fatalf("合法轉移應為 20 組，實得 %d", len(legalTransitions))
+	// 合法組數鎖死 22：§6 表增減任一條，此數即變，逼實作者有意識地改。
+	if len(legalTransitions) != 22 {
+		t.Fatalf("合法轉移應為 22 組，實得 %d", len(legalTransitions))
 	}
 }
 
-// TestIsValidTransition_Exhaustive：7×7=49 組全跑。
-// 合法的 20 組須回 true；其餘 29 組（含 7 組 self）一律 false。
+// TestIsValidTransition_Exhaustive：8×8=64 組全跑。
+// 合法的 22 組須回 true；其餘 42 組（含 8 組 self）一律 false。
 func TestIsValidTransition_Exhaustive(t *testing.T) {
 	count := 0
 	for _, from := range allStatuses {
@@ -83,8 +87,8 @@ func TestIsValidTransition_Exhaustive(t *testing.T) {
 			}
 		}
 	}
-	if count != 49 {
-		t.Fatalf("應跑滿 49 組，實跑 %d", count)
+	if count != 64 {
+		t.Fatalf("應跑滿 64 組，實跑 %d", count)
 	}
 }
 
@@ -99,10 +103,10 @@ func TestIsValidTransition_SelfAlwaysFalse(t *testing.T) {
 
 // TestIsValidTransition_UnknownStatus：表外狀態一律 false，不 panic。
 func TestIsValidTransition_UnknownStatus(t *testing.T) {
-	if IsValidTransition(Status("archived"), StatusTodo) {
+	if IsValidTransition(Status("bogus"), StatusTodo) {
 		t.Error("未知 from 應回 false")
 	}
-	if IsValidTransition(StatusTodo, Status("archived")) {
+	if IsValidTransition(StatusTodo, Status("bogus")) {
 		t.Error("未知 to 應回 false")
 	}
 	if IsValidTransition(Status("a"), Status("b")) {
@@ -111,17 +115,23 @@ func TestIsValidTransition_UnknownStatus(t *testing.T) {
 }
 
 // 重點語意鎖死：done 只能從 review 進（必經驗收）；verify 正規路徑以外無他路。
+// 例外：archived → done（unarchive）不算破例——archived 本身只能從 done 進，
+// 代表這顆單早就通過 review／verify 了，unarchive 只是把它從封存架上拿回來，
+// 不是繞過驗收另闢一條到 done 的路。
 func TestTransition_ReviewIsOnlyWayToDone(t *testing.T) {
 	for _, from := range allStatuses {
-		if from == StatusReview {
+		if from == StatusReview || from == StatusArchived {
 			continue
 		}
 		if IsValidTransition(from, StatusDone) {
-			t.Errorf("%q → done 應被拒（done 只能從 review 進）", from)
+			t.Errorf("%q → done 應被拒（done 只能從 review 進，或 archived unarchive）", from)
 		}
 	}
 	if !IsValidTransition(StatusReview, StatusDone) {
 		t.Error("review → done 必須合法")
+	}
+	if !IsValidTransition(StatusArchived, StatusDone) {
+		t.Error("archived → done（unarchive）必須合法")
 	}
 }
 
@@ -614,12 +624,12 @@ func TestBuiltinTypeDefs(t *testing.T) {
 	}
 }
 
-// TestStatusDefs：顯示 metadata 7 筆、依 sort、值與 dashboard.html 舊 var STATUS 一字一致
+// TestStatusDefs：顯示 metadata 8 筆、依 sort、值與 dashboard.html 舊 var STATUS 一字一致
 // （V05-STATUS-META-API：搬家不是改內容）。
 func TestStatusDefs(t *testing.T) {
 	defs := StatusDefs()
-	if len(defs) != 7 {
-		t.Fatalf("StatusDefs 筆數 = %d, want 7", len(defs))
+	if len(defs) != 8 {
+		t.Fatalf("StatusDefs 筆數 = %d, want 8", len(defs))
 	}
 	want := []StatusDef{
 		{Key: StatusTodo, Label: "未開始", Icon: "○", Color: "#5f6368", Sort: 1},
@@ -629,6 +639,7 @@ func TestStatusDefs(t *testing.T) {
 		{Key: StatusHold, Label: "暫緩", Icon: "◌", Color: "#80868b", Sort: 5},
 		{Key: StatusDone, Label: "完成", Icon: "✔", Color: "#188038", Sort: 6},
 		{Key: StatusCancel, Label: "不做", Icon: "✕", Color: "#9aa0a6", Sort: 7},
+		{Key: StatusArchived, Label: "封存", Icon: "📦", Color: "#795548", Sort: 8},
 	}
 	seen := map[Status]bool{}
 	for i, d := range defs {
@@ -643,10 +654,10 @@ func TestStatusDefs(t *testing.T) {
 		}
 		seen[d.Key] = true
 	}
-	// 7 種狀態一個都不能漏（狀態機常數的完整集合）。
+	// 8 種狀態一個都不能漏（狀態機常數的完整集合）。
 	for _, s := range []Status{
 		StatusTodo, StatusInProgress, StatusReview, StatusBlocked,
-		StatusHold, StatusDone, StatusCancel,
+		StatusHold, StatusDone, StatusCancel, StatusArchived,
 	} {
 		if !seen[s] {
 			t.Errorf("StatusDefs 缺 %q", s)

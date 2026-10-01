@@ -305,3 +305,136 @@ func TestWireWakerDefaults(t *testing.T) {
 		t.Error("已注入的 waker／interval 不該被預設值蓋掉")
 	}
 }
+
+// ---------- target 解析（2026-09-28 A3：rename 名字掉了推送就靜默失效）----------
+
+const paneListJSON = `{"id":"cli:pane:list","result":{"panes":[
+ {"agent":"pi","pane_id":"w1:p1"},
+ {"pane_id":"w1:p2"},
+ {"agent":"claude","pane_id":"w1:p4"},
+ {"agent":"claude","pane_id":"w1:p5","name":"kelaode"},
+ {"agent":"cursor","label":"一龍馬斯客","pane_id":"w1:p7"}
+],"type":"pane_list"}}`
+
+func TestPickPane(t *testing.T) {
+	cases := []struct {
+		target, want, errHas string
+	}{
+		{"pi", "w1:p1", ""},           // agent 種類唯一
+		{"kelaode", "w1:p5", ""},      // rename 名字優先
+		{"一龍馬斯客", "w1:p7", ""},        // label
+		{"claude", "", "多個 pane"},     // 兩個 claude：拒絕，不猜
+		{"xiaoxia", "", "沒有對應的 pane"}, // 零命中
+	}
+	for _, c := range cases {
+		got, err := pickPane([]byte(paneListJSON), c.target)
+		if c.errHas != "" {
+			if err == nil || !strings.Contains(err.Error(), c.errHas) {
+				t.Errorf("%s: err = %v, want 含 %q", c.target, err, c.errHas)
+			}
+			continue
+		}
+		if err != nil || got != c.want {
+			t.Errorf("%s: got %q, %v; want %q", c.target, got, err, c.want)
+		}
+	}
+	if _, err := pickPane([]byte("not json"), "pi"); err == nil {
+		t.Error("壞 JSON 應回錯")
+	}
+}
+
+// fakeHerdrScript：假 herdr——`agent prompt <target>` 只認 pane id（w1:*），
+// 其他 target 回 agent_not_found；`pane list` 回 paneListJSON。每次呼叫記到 log。
+func fakeHerdrScript(t *testing.T, paneList string) (script, logFile string) {
+	t.Helper()
+	dir := t.TempDir()
+	logFile = dir + "/calls.txt"
+	listFile := dir + "/panes.json"
+	if err := writeFile(listFile, paneList); err != nil {
+		t.Fatal(err)
+	}
+	script = dir + "/fake-herdr"
+	body := "#!/bin/sh\n" +
+		"echo \"$*\" >> " + logFile + "\n" +
+		"if [ \"$1\" = pane ] && [ \"$2\" = list ]; then cat " + listFile + "; exit 0; fi\n" +
+		"case \"$3\" in w1:*) exit 0;; esac\n" +
+		"echo '{\"error\":{\"code\":\"agent_not_found\",\"message\":\"agent target '\"$3\"' not found\"}}' >&2\n" +
+		"exit 1\n"
+	if err := writeFile(script, body); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return script, logFile
+}
+
+// TestHerdrWakerFallsBackToPaneID：target 認不得 → 查 pane 清單 → 用 pane id 重送。
+func TestHerdrWakerFallsBackToPaneID(t *testing.T) {
+	script, logFile := fakeHerdrScript(t, paneListJSON)
+	w := herdrWaker{bin: script}
+	if err := w.Wake("pi", "有新交辦"); err != nil {
+		t.Fatalf("Wake: %v", err)
+	}
+	got := readFile(t, logFile)
+	want := "agent prompt pi 有新交辦\npane list\nagent prompt w1:p1 有新交辦\n"
+	if got != want {
+		t.Errorf("calls = %q, want %q", got, want)
+	}
+}
+
+// TestHerdrWakerDirectHitSkipsLookup：target 直接送得到就不查清單。
+func TestHerdrWakerDirectHitSkipsLookup(t *testing.T) {
+	script, logFile := fakeHerdrScript(t, paneListJSON)
+	if err := (herdrWaker{bin: script}).Wake("w1:p4", "x"); err != nil {
+		t.Fatalf("Wake: %v", err)
+	}
+	if got := readFile(t, logFile); got != "agent prompt w1:p4 x\n" {
+		t.Errorf("calls = %q", got)
+	}
+}
+
+// TestHerdrWakerAmbiguousOrMissingRefuses：多命中／零命中／清單壞掉都回錯，且絕不亂送。
+func TestHerdrWakerAmbiguousOrMissingRefuses(t *testing.T) {
+	for _, c := range []struct{ target, list, errHas string }{
+		{"claude", paneListJSON, "多個 pane"},
+		{"xiaoxia", paneListJSON, "沒有對應的 pane"},
+		{"pi", "garbage", "不是預期的 JSON"},
+	} {
+		script, logFile := fakeHerdrScript(t, c.list)
+		err := (herdrWaker{bin: script}).Wake(c.target, "x")
+		if err == nil || !strings.Contains(err.Error(), c.errHas) || !strings.Contains(err.Error(), "agent_not_found") {
+			t.Errorf("%s: err = %v, want 含 %q 與原始 agent_not_found", c.target, err, c.errHas)
+		}
+		if n := strings.Count(readFile(t, logFile), "agent prompt"); n != 1 {
+			t.Errorf("%s: prompt 次數 = %d, want 1（只有最初那次，不亂送）", c.target, n)
+		}
+	}
+}
+
+// TestHerdrWakerPaneListFailure：`pane list` 本身失敗 → 回錯。
+func TestHerdrWakerPaneListFailure(t *testing.T) {
+	dir := t.TempDir()
+	script := dir + "/herdr"
+	body := "#!/bin/sh\nif [ \"$1\" = pane ]; then exit 4; fi\necho agent_not_found >&2\nexit 1\n"
+	if err := writeFile(script, body); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := (herdrWaker{bin: script}).Wake("pi", "x")
+	if err == nil || !strings.Contains(err.Error(), "herdr pane list") {
+		t.Errorf("err = %v, want 帶 herdr pane list", err)
+	}
+}
+
+// TestHerdrWakerDefaultBinary：沒指定 bin 時走 PATH 上的 herdr。
+func TestHerdrWakerDefaultBinary(t *testing.T) {
+	if got := (herdrWaker{}).binary(); got != defaultHerdrBin {
+		t.Errorf("binary() = %q, want %q", got, defaultHerdrBin)
+	}
+	if got := (herdrWaker{bin: "/x/herdr"}).binary(); got != "/x/herdr" {
+		t.Errorf("binary() = %q", got)
+	}
+}

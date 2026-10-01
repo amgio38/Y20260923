@@ -50,18 +50,46 @@ Project
 ## 安裝
 
 ### 一鍵（新機器，還沒 clone 過）
-# Linux / macOS
+
 ```bash
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/amgio38/Y20260923/main/install.sh | bash
 ```
-# Windows（PowerShell）
+
 ```powershell
+# Windows（PowerShell 5.1 或 7）
 Invoke-WebRequest -Uri https://raw.githubusercontent.com/amgio38/Y20260923/main/install.ps1 -OutFile install.ps1
-.\install.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-腳本會檢查 `git`／`go`（>=1.25）、clone（或用現有 checkout）、build、把 `pb` 裝進
-`~/.local/bin`，並印出下一步。
+（Windows 預設的執行原則常常擋掉 `.\install.ps1`；`-ExecutionPolicy Bypass` 只對這一次啟動的 PowerShell 有效，不會改系統設定。）
+
+預設走**預編譯版**，不需要 Go、不需要 git：
+
+1. 判斷你的平台，從 GitHub Releases 下載對應的壓縮檔，**驗 sha256 對得上才繼續**（沒有 checksum 或對不上就停下來，不會裝沒驗過的檔案）。
+2. 先檢查壓縮檔內容、確認 `pb` 真的跑得起來，才放進安裝目錄。
+3. 找不到預編譯版（還沒發布、網路抓不到、平台不支援）就退回**原始碼編譯**：檢查 git，確認有能用的 Go（沒有、太舊或壞掉，會自己下載一份官方的、驗過 checksum 的到你的 cache 目錄，不動系統），clone 後 build。
+
+| 平台 | 預編譯版 |
+| --- | --- |
+| Linux x86-64 / ARM64 | 有 |
+| macOS Intel / Apple Silicon | 有 |
+| Windows x64 / ARM64 | 有 |
+| 其他 | 走原始碼編譯 |
+
+**安裝目錄**是「專案根」：放 `bin/pb`、`docs/`、`service.sh`，以及你的資料 `var/board.db`。腳本會**問你**要裝在哪（預設：目前所在目錄底下的 `project_board`）；不想被問就先設 `PROJECT_BOARD_HOME`。目標目錄已經有別人的東西時會直接中止，不覆蓋。**重跑一次就是升級**，`var/` 和 `owners.txt` 不會被動到。
+
+選項：
+
+```bash
+curl -fsSL …/install.sh | bash -s -- --version v0.20260928.006   # 指定版本
+curl -fsSL …/install.sh | bash -s -- --from-source               # 強制從原始碼編譯
+PROJECT_BOARD_HOME=$HOME/pb curl -fsSL …/install.sh | bash        # 指定安裝目錄，不詢問
+```
+
+PowerShell 版對應 `-Version v0.20260928.006`、`-FromSource`、`$env:PROJECT_BOARD_HOME`。其他環境變數（`PROJECT_BOARD_BINDIR`、`PROJECT_BOARD_RELEASE_BASE`、`PROJECT_BOARD_GO_CACHE`…）見兩支腳本最上面的註解。
+
+想先看過再跑：把腳本存下來（`curl -fsSLO …/install.sh`），讀完 `bash install.sh`。腳本不使用 sudo／系統管理員權限。
 
 ### 手動（已經 clone 好）
 
@@ -86,18 +114,28 @@ make test           # go test ./...（改完程式碼務必先跑這個再 commi
 
 `actor`（誰在寫入）跟 dashboard 上的「每人手上張數」認的名字清單，**原始碼裡沒有寫死任何
 團隊或任何人的名字**——沒設定的話只認 `unassigned` 一個值（新裝好、還沒設定就是這樣，乾淨、
-不會看到不相干的名字）。設定方式擇一（先讀到的贏）：
+不會看到不相干的名字）。載入順序（先讀到的贏）：
+
+1. 環境變數 `PB_OWNERS`（逗號分隔）——適合 container／CI 這種本來就會注入 env 的場合。
+2. 環境變數 `PB_OWNERS_FILE` 指定的檔案路徑。
+3. 行程工作目錄（cwd）下的 `owners.txt`。
+4. **pb 執行檔所屬專案根**下的 `owners.txt`——執行檔位於 `<root>/bin/` 且 `<root>/go.mod`
+   存在時成立。這是給「各 harness 的 `pb mcp` cwd 不在本專案」用的：`owners.txt` 放 repo 根
+   目錄（跟 `go.mod` 同層）就會被自動讀到，不必在每個 harness 設定檔各塞一次 `PB_OWNERS_FILE`。
 
 ```bash
 # 方式一：環境變數（逗號分隔），適合container/CI這種本來就會注入env的場合
 export PB_OWNERS="alice,bob,carol,human,unassigned"
 
 # 方式二：設定檔，適合一般本機/常駐部署
-cp owners.example.txt owners.txt   # 跟 pb 執行檔同一個工作目錄；改成你自己團隊的名字
+cp owners.example.txt owners.txt   # 放 repo 根目錄（跟 go.mod 同層）；改成你自己團隊的名字
 # 或用 PB_OWNERS_FILE 指到別的路徑：export PB_OWNERS_FILE=/path/to/owners.txt
 ```
 
-兩者都沒有就只認 `unassigned`；`unassigned` 不管哪種設定方式都會自動併入（schema 層的
+實際採用的來源，`pb serve`／`pb mcp` 啟動時會印在 stderr（`owners：N 名（來源：…）`），
+名冊不如預期時先看這行。
+
+四種都沒有就只認 `unassigned`；`unassigned` 不管哪種設定方式都會自動併入（schema 層的
 owner 預設值）。`owners.txt` 是本機檔案，已加進 `.gitignore`，不會被commit。
 
 ---
@@ -227,6 +265,10 @@ commit sha 顯示成可點連結（回連 GitHub）。
 3. 算出來要叫醒誰之後，會**真的執行** `herdr agent prompt <target> <訊息>`（子行程，5 秒逾時，
    herdr 不在或失敗只記 log，不會讓 `pb serve` 掛掉，也不會擋任何寫入）。訊息內容是組好的人話，
    例如「`[ProjectBoard] Y20260920/ISSUE-XXX 進 review（xiaoxia）。請看單驗收。`」。
+   **target 認不得時會退一步**（2026-09-28）：herdr 的 rename 名字隨 pane 重開就掉，
+   直接送回 `agent_not_found` 時，改跑 `herdr pane list`，依序比對 name／label、再比
+   agent 種類（如 `pi`），**唯一命中**才用該 pane id 重送；多筆或零筆命中就回錯記 log，
+   寧可不送也不送錯人。
 4. 改狀態的那個行程（呼叫 `pb_transition`／`pb_verify` 的人）**本身不會去叫 herdr**——喚醒的
    責任完全在 `pb serve` 這個常駐行程裡，設計上就是要避免「誰改的誰負責通知」這種容易漏掉的
    耦合。

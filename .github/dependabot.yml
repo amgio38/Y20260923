@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Go 依賴。小版本與修補版合併成每週一個 PR，一個人維護不會被一堆 PR 淹沒；
+  # 大版本另外開，因為可能要改程式。漏洞的緊急升級是另一條路，在 repo 設定裡的
+  # Dependabot security updates 開啟。
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      go-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  # workflows 用到的 GitHub Actions。
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]

@@ -1,0 +1,110 @@
+name: release
+
+# 推一個版本標籤（例如 v0.20260928.006）就會：
+#   1. 確認標籤跟程式裡的版號（internal/version/version.go）一致；
+#   2. 跑完整測試；
+#   3. 打出 6 個平台的「裝好就能跑的專案根」壓縮檔，每個附 sha256；
+#   4. 全部成功才由獨立的發布工作建立 GitHub Release。
+# 用的憑證只有內建的 GITHUB_TOKEN。
+#
+# 每個壓縮檔的內容與形狀由 scripts/package-release.sh 決定——install.sh／install.ps1
+# 的測試用的是同一支，所以測試吃的跟這裡發布的是同一種東西。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  PLATFORMS: "linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+
+jobs:
+  build:
+    name: build and package
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: tag matches the version in the code
+        run: |
+          code="$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/version/version.go)"
+          if [ -z "$code" ]; then
+            echo "::error::找不到 internal/version/version.go 的 Version"
+            exit 1
+          fi
+          if [ "${GITHUB_REF_NAME#v}" != "${code#V}" ]; then
+            echo "::error::標籤 $GITHUB_REF_NAME 跟程式裡的版號 $code 對不上；先改 internal/version/version.go 再打標籤"
+            exit 1
+          fi
+          echo "version: $code"
+
+      - name: go test
+        run: go test ./...
+
+      - name: package every platform
+        run: |
+          set -eu
+          for p in $PLATFORMS; do
+            scripts/package-release.sh "${p%/*}" "${p#*/}" dist
+          done
+          ls -l dist
+
+      # 這台 runner 是 linux/amd64，可以把剛打好的 Linux 版真的裝起來跑一次，確認發布出去的東西能用。
+      - name: smoke test the linux/amd64 archive
+        run: |
+          set -eu
+          mkdir smoke
+          tar -xzf dist/projectboard-linux-amd64.tar.gz -C smoke
+          code="$(sed -n 's/^const Version = "\(.*\)"/\1/p' internal/version/version.go)"
+          got="$(smoke/bin/pb version)"
+          if [ "$got" != "$code" ]; then
+            echo "::error::打包出來的 pb 回報 $got，預期 $code"
+            exit 1
+          fi
+
+      - name: keep the archives for the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: assets
+
+      - name: publish
+        run: |
+          set -eu
+          ls -l assets
+          # 六個平台都要在，少一個就不發布：少了的那個平台的使用者會被默默導去很慢的原始碼編譯。
+          for p in $PLATFORMS; do
+            os="${p%/*}"; arch="${p#*/}"
+            ext=tar.gz; [ "$os" = windows ] && ext=zip
+            for f in "assets/projectboard-$os-$arch.$ext" "assets/projectboard-$os-$arch.$ext.sha256"; do
+              test -s "$f" || { echo "::error::$f 不見了"; exit 1; }
+            done
+          done
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          gh release upload "$GITHUB_REF_NAME" assets/* --clobber

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"project_board/internal/domain"
 	"project_board/internal/store"
 	"project_board/internal/version"
 )
@@ -53,6 +54,11 @@ type app struct {
 	// hook 喚醒（v0.3）：serve 用；測試換成假 Waker，不真的 exec herdr（REQ-V03-HOOK 裁示）。
 	waker        Waker
 	pollInterval time.Duration // 預設 defaultHookPollInterval（2s）
+	// executable：這支 pb 的路徑（預設 os.Executable；測試注入），用來推回專案根。
+	executable func() (string, error)
+	// cwdFallbackDB：預設 DB 最後只剩「相對 CWD」可用時記下該路徑；這種路徑找不到檔案
+	// 時除了 `pb init` 一律拒絕，不再隱式建空庫（見 resolveDefaultDB）。
+	cwdFallbackDB string
 }
 
 func newApp(stdout, stderr io.Writer, getenv func(string) string) *app {
@@ -233,13 +239,65 @@ func (a *app) newFlagSet(name string) *flag.FlagSet {
 	return fs
 }
 
-// dbFlag：--db，預設 env PB_DB → var/board.db。
+// dbFlag：--db，預設見 resolveDefaultDB。
 func (a *app) dbFlag(fs *flag.FlagSet) *string {
-	def := a.getenv("PB_DB")
-	if def == "" {
-		def = defaultDBPath
+	def, fromCwdFallback := a.resolveDefaultDB()
+	if fromCwdFallback {
+		a.cwdFallbackDB = def
 	}
-	return fs.String("db", def, "SQLite 檔路徑（預設 $PB_DB → "+defaultDBPath+"）")
+	return fs.String("db", def, "SQLite 檔路徑（預設 $PB_DB → ./"+defaultDBPath+"（存在時）→ 專案根/"+defaultDBPath+"）")
+}
+
+// resolveDefaultDB：沒帶 --db 時的 DB 路徑。
+//
+//  1. env PB_DB。
+//  2. 目前目錄下已存在的 var/board.db（在 repo 裡照舊）。
+//  3. 由 binary 實體路徑（解 symlink）推回的專案根 <root>/var/board.db——條件是
+//     binary 在 <root>/bin/ 且 <root>/go.mod 存在；PATH 上的 pb 做成 symlink 就走這條。
+//  4. 都不成立才退回相對 CWD 的 var/board.db，並回報 fromCwdFallback=true。
+//
+// 2026-09-28 修：以前一律相對 CWD，在 repo 外打 pb 會生出一顆空 DB，畫面顯示「沒有命中」
+// 讓人以為資料不見（OPERATIONS §9.3 的陷阱）。
+func (a *app) resolveDefaultDB() (path string, fromCwdFallback bool) {
+	if v := a.getenv("PB_DB"); v != "" {
+		return v, false
+	}
+	if fileExists(defaultDBPath) {
+		return defaultDBPath, false
+	}
+	if root := a.projectRoot(); root != "" {
+		return filepath.Join(root, defaultDBPath), false
+	}
+	return defaultDBPath, true
+}
+
+// projectRoot：這支 pb 所屬的專案根（判定見 domain.ProjectRootFor），推不出回空字串。
+func (a *app) projectRoot() string {
+	executable := a.executable
+	if executable == nil {
+		executable = os.Executable
+	}
+	exe, err := executable()
+	if err != nil {
+		return ""
+	}
+	return domain.ProjectRootFor(exe)
+}
+
+// requireExistingDB：dbPath 是「相對 CWD 的退路」且檔案不存在時回錯——
+// 那幾乎一定是在錯的目錄打了 pb，建一顆空庫只會讓人以為資料不見。
+func (a *app) requireExistingDB(dbPath string) error {
+	if a.cwdFallbackDB == "" || dbPath != a.cwdFallbackDB || fileExists(dbPath) {
+		return nil
+	}
+	cwd, _ := os.Getwd()
+	return fmt.Errorf("找不到 DB %s（目前目錄 %s 底下沒有，這支 pb 也不在專案的 bin/ 裡、推不出專案根）。"+
+		"請 cd 到 project_board、設 PB_DB 或帶 --db；確定要在這裡建新庫就先跑 pb init", dbPath, cwd)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // actorFlag：--actor（寫入類子命令）。
@@ -276,8 +334,16 @@ func openStore(dbPath string) (*store.Store, error) {
 	return st, nil
 }
 
-// withStore：開 DB 跑 fn，收工一定關檔。
+// withStore：開既有 DB 跑 fn，收工一定關檔（CWD 退路找不到檔就拒絕，見 requireExistingDB）。
 func (a *app) withStore(dbPath string, fn func(ctx context.Context, st *store.Store) error) int {
+	if err := a.requireExistingDB(dbPath); err != nil {
+		return a.fail(err)
+	}
+	return a.withStoreCreate(dbPath, fn)
+}
+
+// withStoreCreate：同 withStore，但 DB 不存在就建（只有 `pb init` 用——明講要建庫）。
+func (a *app) withStoreCreate(dbPath string, fn func(ctx context.Context, st *store.Store) error) int {
 	st, err := openStore(dbPath)
 	if err != nil {
 		return a.fail(err)

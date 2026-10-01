@@ -97,7 +97,7 @@ pb repo show <project-id> [--json]
 | `pb_unlink` | `actor`, `link_id` | `{ok:true}` |
 | `pb_verify` | `actor`, `id`, `note`（證據） | 節點（status=`done`）＋ history(`verify`)；`actor==owner` 時標記 `self-verified`（§11.2） |
 | `pb_comment` | `actor`, `id`, `text` | history(`comment`) |
-| `pb_search` | `query?`, `project?`, `tag?`, `owner?`（四者至少一個） | 命中節點（FTS5，唯讀，回精簡陣列不含 body） |
+| `pb_search` | `query?`, `project?`, `tag?`, `owner?`, `status?`（至少一個） | 命中節點（FTS5，唯讀，回扁平精簡陣列不含 body；`status` 逗號多選） |
 | `pb_history` | `id`, `limit?` | 事件陣列 |
 | `pb_stats` | `project?` | 各狀態計數／每 REQ 完成度／**自我驗收張數**（§11.2） |
 | `pb_delete` | `actor`, `id` | `{ok:true}`（**僅 `report` 或無子、無 link 的節點**可刪） |
@@ -117,7 +117,7 @@ pb repo show <project-id> [--json]
 | GET | `/api/node/{id}` | 節點 ＋ links ＋ children |
 | GET | `/api/node/{id}/history?limit=` | 事件 |
 | GET | `/api/stats?project=` | 統計（含各狀態計數、每 REQ 完成度、**自我驗收張數**；`focus` 聚合見下方範例） |
-| GET | `/api/search?q=&project=` | 命中 |
+| GET | `/api/search?q=&project=&tag=&owner=&status=` | 命中（扁平、不補祖先；`status` 逗號多選、非法→400；條件至少一個，全空回 `[]`） |
 | GET | `/api/deps?project=` | `depends_on` 依賴清單 |
 | GET | `/api/checklist?project=` | 母表項目清單 |
 | GET | `/api/report?week=&project=` | 週報（做了什麼／進行中／下週計畫） |
@@ -171,7 +171,7 @@ pb repo show <project-id> [--json]
 
 ```json
 {
-  "count_by_status": {"todo":3,"in_progress":2,"review":0,"blocked":1,"hold":0,"done":1,"cancel":0},
+  "count_by_status": {"todo":3,"in_progress":2,"review":0,"blocked":1,"hold":0,"done":1,"cancel":0,"archived":0},
   "count_by_owner": {"human":1,"kaimadi":1,"unassigned":1,"xiaoxia":1,"yilong":2},
   "req_progress": {"Y20260916/REQ-MEMBER-CORE":0.333,"Y20260916/REQ-ARCH":0},
   "self_verified_count": 1,

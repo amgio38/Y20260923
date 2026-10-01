@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -48,7 +49,52 @@ const (
 	StatusHold       Status = "hold"
 	StatusDone       Status = "done"
 	StatusCancel     Status = "cancel"
+	StatusArchived   Status = "archived"
 )
+
+// AllStatuses 是全部合法狀態，順序同 docs/DATA_MODEL.md §6（也是錯誤訊息的顯示順序）。
+var AllStatuses = []Status{
+	StatusTodo, StatusInProgress, StatusReview, StatusBlocked, StatusHold, StatusDone, StatusCancel, StatusArchived,
+}
+
+// ParseStatusList 解析逗號分隔的狀態清單（容忍每項前後空白與空項，如 "todo, in_progress"）。
+//
+// 空字串回 (nil, nil)（＝不過濾）；任一項不合法即回錯，訊息列出可用狀態。
+// 單一來源：狀態名冊只在 AllStatuses 一處，CLI／MCP／HTTP 共用，避免各處各抄一份而漂移。
+func ParseStatusList(s string) ([]Status, error) {
+	var out []Status
+	for _, tok := range strings.Split(s, ",") {
+		tok = strings.TrimSpace(tok)
+		if tok == "" {
+			continue
+		}
+		st := Status(tok)
+		if !st.IsKnown() {
+			return nil, fmt.Errorf("未知狀態 %q（可用：%s）", tok, strings.Join(StatusNames(), "／"))
+		}
+		out = append(out, st)
+	}
+	return out, nil
+}
+
+// StatusNames 回 AllStatuses 的字串形式（錯誤訊息／usage 共用）。
+func StatusNames() []string {
+	names := make([]string, len(AllStatuses))
+	for i, s := range AllStatuses {
+		names[i] = string(s)
+	}
+	return names
+}
+
+// IsKnown 回報 s 是否為 AllStatuses 之一。
+func (s Status) IsKnown() bool {
+	for _, v := range AllStatuses {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
 
 // Priority 是優先序（DATA_MODEL.md §2）。
 type Priority string
@@ -94,29 +140,105 @@ var minimalOwners = []string{"unassigned"}
 // Owners 是目前生效中的名冊，順序即優先顯示順序（DATA_MODEL.md §8）。actor（見 §11.1）
 // 與匯入推斷 owner（見 importer）都只認這份清單。載入順序（先到先贏）：
 //  1. 環境變數 PB_OWNERS（逗號分隔，如 "alice,bob,human,unassigned"）
-//  2. 設定檔（環境變數 PB_OWNERS_FILE 指定路徑，預設 "owners.txt"；每行一個名字，
-//     支援 # 開頭註解與空行）——這是給「裝好就要能用、還沒設定環境變數」的情境用的，
-//     複製 owners.example.txt 成 owners.txt 填自己團隊的名字即可，不用重編。
-//  3. minimalOwners（見上）——原始碼裡唯一內建、不代表任何人的最後防線。
+//  2. 環境變數 PB_OWNERS_FILE 指定的檔案路徑（每行一個名字，支援 # 註解與空行）
+//  3. 行程工作目錄（cwd）下的 owners.txt
+//  4. pb 執行檔所屬專案根下的 owners.txt（執行檔位於 <root>/bin/ 且 <root>/go.mod
+//     存在時；見 ownersFileFromExeRoot）——各 harness 的 `pb mcp` cwd 通常不在
+//     project_board/，靠這層才找得到隨 repo 帶的 owners.txt。
+//  5. minimalOwners（見上）——原始碼裡唯一內建、不代表任何人的最後防線。
+//
+// 2～4 是給「裝好就要能用、還沒設定環境變數」的情境用的：複製 owners.example.txt 成
+// owners.txt 填自己團隊的名字即可，不用重編。實際採用的來源見 OwnersSource()。
 //
 // "unassigned" 是 schema 層的預設 owner，不管走哪一層都強制併入，避免自訂名冊漏掉它
 // 導致既有資料的 owner 驗證失敗。
 var Owners = loadOwners()
 
+// ownersSource 記錄 Owners 實際是從哪一層載入的（loadOwners 設定一次）。
+var ownersSource string
+
+// OwnersSource 回傳目前名冊來源的人類可讀描述，例如 "cwd /x/owners.txt"、
+// "pb 執行檔專案根 /y/owners.txt"、"env PB_OWNERS"、"built-in minimal（只認 unassigned）"。
+// 供啟動 log 與除錯查看——名冊不如預期時，先看是哪一層先被讀到
+// （Y20260920/ISSUE-OWNERS-TXT-CWD-PB）。
+func OwnersSource() string { return ownersSource }
+
 const defaultOwnersFile = "owners.txt"
 
 func loadOwners() []string {
 	if names := parseOwnersCSV(os.Getenv("PB_OWNERS")); len(names) > 0 {
+		ownersSource = "env PB_OWNERS"
 		return withUnassigned(names)
 	}
-	file := os.Getenv("PB_OWNERS_FILE")
-	if file == "" {
-		file = defaultOwnersFile
+	for _, cand := range ownersFileCandidates() {
+		if names := readOwnersFile(cand.path); len(names) > 0 {
+			ownersSource = cand.label
+			return withUnassigned(names)
+		}
 	}
-	if names := readOwnersFile(file); len(names) > 0 {
-		return withUnassigned(names)
-	}
+	ownersSource = "built-in minimal（只認 unassigned）"
 	return minimalOwners
+}
+
+// ownersCandidate 是一個 owners.txt 候選：path 是實際開檔路徑，label 是給人看的來源描述。
+type ownersCandidate struct {
+	path  string
+	label string
+}
+
+// ownersFileCandidates 依查找順序回傳候選：
+// PB_OWNERS_FILE（有設才列）→ cwd 的 owners.txt → pb 執行檔專案根的 owners.txt。
+// 前一項讀不到（不存在／讀不到／內容空）就換下一項，由 loadOwners 逐項試。
+func ownersFileCandidates() []ownersCandidate {
+	var out []ownersCandidate
+	if p := os.Getenv("PB_OWNERS_FILE"); p != "" {
+		out = append(out, ownersCandidate{p, "env PB_OWNERS_FILE → " + p})
+	}
+	cwdLabel := defaultOwnersFile
+	if abs, err := filepath.Abs(defaultOwnersFile); err == nil {
+		cwdLabel = abs
+	}
+	out = append(out, ownersCandidate{defaultOwnersFile, "cwd " + cwdLabel})
+	if rootFile := ownersFileFromExeRoot(); rootFile != "" {
+		out = append(out, ownersCandidate{rootFile, "pb 執行檔專案根 " + rootFile})
+	}
+	return out
+}
+
+// exePath 是 os.Executable 的間接層，測試可替換以模擬「執行檔在某專案根的 bin/ 下」。
+var exePath = os.Executable
+
+// ownersFileFromExeRoot 推回「pb 執行檔所屬專案根」下的 owners.txt 路徑（判定見
+// ProjectRootFor）。推不出來（例如 `go run` 的暫存執行檔、`go test` 的測試 binary、
+// 或複製到 PATH 的獨立 binary）回 ""。
+func ownersFileFromExeRoot() string {
+	exe, err := exePath()
+	if err != nil {
+		return ""
+	}
+	root := ProjectRootFor(exe)
+	if root == "" {
+		return ""
+	}
+	return filepath.Join(root, defaultOwnersFile)
+}
+
+// ProjectRootFor：exe（先解 symlink）位於 <root>/bin/ 且 <root>/go.mod 是檔案時回 <root>，
+// 否則 ""。判定比照 skill.py 的 project_root_for()；owners.txt 與預設 DB 路徑共用
+// （cmd/pb resolveDefaultDB），讓 PATH 上 symlink 過來的 pb 也推得回真正的專案根。
+func ProjectRootFor(exe string) string {
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	bindir := filepath.Dir(exe)
+	if filepath.Base(bindir) != "bin" {
+		return ""
+	}
+	root := filepath.Dir(bindir)
+	if fi, err := os.Stat(filepath.Join(root, "go.mod")); err != nil || fi.IsDir() {
+		return ""
+	}
+	return root
 }
 
 func parseOwnersCSV(raw string) []string {
@@ -203,8 +325,9 @@ func IsValidOwner(owner string) bool {
 //	review      → done、in_progress、blocked、cancel
 //	blocked     → in_progress、hold、cancel
 //	hold        → todo、in_progress、cancel
-//	done        → in_progress（reopen，需 note——note 由 store 層檢查）
+//	done        → in_progress（reopen，需 note——note 由 store 層檢查）、archived（封存，需 note——note 由 store 層檢查）
 //	cancel      → todo（revive）
+//	archived    → done（unarchive，免 note）
 var allowedTransitions = map[Status]map[Status]bool{
 	StatusTodo: {
 		StatusInProgress: true,
@@ -236,9 +359,13 @@ var allowedTransitions = map[Status]map[Status]bool{
 	},
 	StatusDone: {
 		StatusInProgress: true,
+		StatusArchived:   true,
 	},
 	StatusCancel: {
 		StatusTodo: true,
+	},
+	StatusArchived: {
+		StatusDone: true,
 	},
 }
 

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -131,15 +133,92 @@ const defaultHerdrBin = "herdr"
 const wakeTimeout = 5 * time.Second
 
 func (w herdrWaker) Wake(target, message string) error {
-	bin := w.bin
-	if bin == "" {
-		bin = defaultHerdrBin
+	err := w.prompt(target, message)
+	if err == nil || !errors.Is(err, errHerdrTargetNotFound) {
+		return err
 	}
+	// rename 的名字隨 pane 重開就掉（2026-09-28 A3：target=pi 查無此 agent，推送
+	// 靜默失效）。直接送失敗時才退一步：從 pane 清單解析出唯一的 pane_id 重送。
+	pane, rerr := w.resolvePane(target)
+	if rerr != nil {
+		return fmt.Errorf("%w；改用 pane 清單解析也失敗：%v", err, rerr)
+	}
+	return w.prompt(pane, message)
+}
+
+// errHerdrTargetNotFound：herdr 認不得這個 target（agent_not_found），可退一步解析。
+var errHerdrTargetNotFound = errors.New("herdr 找不到 target")
+
+func (w herdrWaker) binary() string {
+	if w.bin == "" {
+		return defaultHerdrBin
+	}
+	return w.bin
+}
+
+// prompt：`herdr agent prompt <target> <訊息>`，參數分開傳、不經 shell。
+func (w herdrWaker) prompt(target, message string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, bin, "agent", "prompt", target, message).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("herdr agent prompt %s: %w（%s）", target, err, strings.TrimSpace(string(out)))
+	out, err := exec.CommandContext(ctx, w.binary(), "agent", "prompt", target, message).CombinedOutput()
+	if err == nil {
+		return nil
 	}
-	return nil
+	text := strings.TrimSpace(string(out))
+	if strings.Contains(text, "agent_not_found") {
+		return fmt.Errorf("herdr agent prompt %s: %w（%s）", target, errHerdrTargetNotFound, text)
+	}
+	return fmt.Errorf("herdr agent prompt %s: %w（%s）", target, err, text)
+}
+
+// resolvePane：跑 `herdr pane list` 交給 pickPane。
+func (w herdrWaker) resolvePane(target string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, w.binary(), "pane", "list").Output()
+	if err != nil {
+		return "", fmt.Errorf("herdr pane list: %w", err)
+	}
+	return pickPane(out, target)
+}
+
+// herdrPane：`herdr pane list` 每筆裡喚醒要用到的欄位。
+type herdrPane struct {
+	PaneID string `json:"pane_id"`
+	Agent  string `json:"agent"`
+	Label  string `json:"label"`
+	Name   string `json:"name"`
+}
+
+// pickPane：從 `herdr pane list` 的 JSON 找 target 對應的唯一 pane_id。
+// 先比人取的名字（name／label），再比 agent 種類（pi、claude…）；
+// 同一層多筆命中就拒絕——寧可不送，也不能送錯人。
+func pickPane(listJSON []byte, target string) (string, error) {
+	var doc struct {
+		Result struct {
+			Panes []herdrPane `json:"panes"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(listJSON, &doc); err != nil {
+		return "", fmt.Errorf("herdr pane list 輸出不是預期的 JSON：%w", err)
+	}
+	byName := func(p herdrPane) bool { return p.Name == target || p.Label == target }
+	byAgent := func(p herdrPane) bool { return p.Agent == target }
+	for _, match := range []func(herdrPane) bool{byName, byAgent} {
+		var hits []string
+		for _, p := range doc.Result.Panes {
+			if p.PaneID != "" && match(p) {
+				hits = append(hits, p.PaneID)
+			}
+		}
+		switch len(hits) {
+		case 0:
+			continue
+		case 1:
+			return hits[0], nil
+		default:
+			return "", fmt.Errorf("target %q 對到多個 pane（%s），不猜", target, strings.Join(hits, "、"))
+		}
+	}
+	return "", fmt.Errorf("target %q 在 herdr pane 清單裡沒有對應的 pane", target)
 }

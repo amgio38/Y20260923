@@ -1,0 +1,38 @@
+name: 功能建議
+description: 想要新的功能或改進
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解決什麼問題？
+      description: 先說情境，再說解法。你在做什麼、卡在哪裡？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 你希望變成怎樣？
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 你考慮過的其他做法
+      description: 包括用現有功能能不能做到、為什麼不夠。
+  - type: dropdown
+    id: area
+    attributes:
+      label: 屬於哪一塊？
+      options:
+        - 命令列（pb ...）
+        - MCP 介面（給 AI 工具）
+        - Dashboard（網頁）
+        - 資料與狀態機（節點、狀態、連結）
+        - Git／Hook 整合
+        - 安裝與發布
+        - 文件
+        - 其他
+    validations:
+      required: true

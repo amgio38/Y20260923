@@ -11,17 +11,10 @@ import (
 	"project_board/internal/store"
 )
 
-// 狀態集（DATA_MODEL.md §6）；只用來先擋打錯字，合法性仍由狀態機（domain）判定。
-var validStatuses = []string{"todo", "in_progress", "review", "blocked", "hold", "done", "cancel"}
+// 狀態集（DATA_MODEL.md §6）；單一來源＝domain.AllStatuses，避免各處各抄一份而漂移。
+var validStatuses = domain.StatusNames()
 
-func isValidStatusName(s string) bool {
-	for _, v := range validStatuses {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
+func isValidStatusName(s string) bool { return domain.Status(s).IsKnown() }
 
 // parseSince：--if-unmodified-since 的 RFC3339 解析（DATA_MODEL.md §11.6）。
 func parseSince(s string) (*time.Time, error) {
@@ -43,7 +36,7 @@ func (a *app) cmdInit(args []string) int {
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return exitUsage
 	}
-	return a.withStore(*db, func(ctx context.Context, st *store.Store) error {
+	return a.withStoreCreate(*db, func(ctx context.Context, st *store.Store) error {
 		v, err := st.SchemaVersion(ctx)
 		if err != nil {
 			return err
@@ -145,22 +138,29 @@ func (a *app) cmdSearch(args []string) int {
 	project := fs.String("project", "", "限定專案")
 	tag := fs.String("tag", "", "標籤整段相符（逗號分隔欄位，非子字串）")
 	owner := fs.String("owner", "", "owner 全等")
+	status := fs.String("status", "", "狀態多選（逗號分隔，如 todo,in_progress,review,blocked）")
 	asJSON := fs.Bool("json", false, "輸出 JSON")
 	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
 		return exitUsage
 	}
 	if fs.NArg() > 1 {
-		return a.usageErr("用法：pb search [query] [--project X] [--tag t] [--owner o]")
+		return a.usageErr("用法：pb search [query] [--project X] [--tag t] [--owner o] [--status s1,s2]")
 	}
 	query := ""
 	if fs.NArg() == 1 {
 		query = fs.Arg(0)
 	}
-	if query == "" && *project == "" && *tag == "" && *owner == "" {
-		return a.usageErr("query／--project／--tag／--owner 至少要有一個")
+	if query == "" && *project == "" && *tag == "" && *owner == "" && *status == "" {
+		return a.usageErr("query／--project／--tag／--owner／--status 至少要有一個")
+	}
+	statuses, err := domain.ParseStatusList(*status)
+	if err != nil {
+		return a.usageErr("%v", err)
 	}
 	return a.withStore(*db, func(ctx context.Context, st *store.Store) error {
-		nodes, err := st.SearchAdvanced(ctx, query, *project, *tag, *owner)
+		nodes, err := st.SearchFiltered(ctx, store.SearchFilter{
+			Query: query, Project: *project, Tag: *tag, Owner: *owner, Statuses: statuses,
+		})
 		if err != nil {
 			return err
 		}

@@ -74,8 +74,8 @@ func TestNewAndMigrateCreateSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SchemaVersion: %v", err)
 	}
-	if v != 6 {
-		t.Fatalf("schema_version = %d, want 6", v)
+	if v != 8 {
+		t.Fatalf("schema_version = %d, want 8", v)
 	}
 	for _, tbl := range []string{"nodes", "links", "history", "meta", "nodes_fts", "hooks", "node_types"} {
 		var name string
@@ -190,8 +190,8 @@ func TestMigrateIdempotent(t *testing.T) {
 		}
 	}
 	v, err := s.SchemaVersion(bg)
-	if err != nil || v != 6 {
-		t.Fatalf("schema_version = %d (err=%v), want 6", v, err)
+	if err != nil || v != 8 {
+		t.Fatalf("schema_version = %d (err=%v), want 8", v, err)
 	}
 }
 
@@ -293,10 +293,11 @@ func TestLoadMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loadMigrations: %v", err)
 		}
-		if len(ms) != 6 || ms[0].version != 1 || ms[0].name != "init" || ms[1].version != 2 || ms[1].name != "fts" ||
+		if len(ms) != 8 || ms[0].version != 1 || ms[0].name != "init" || ms[1].version != 2 || ms[1].name != "fts" ||
 			ms[2].version != 3 || ms[2].name != "hooks" || ms[3].version != 4 || ms[3].name != "item" ||
-			ms[4].version != 5 || ms[4].name != "repo_link" || ms[5].version != 6 || ms[5].name != "node_types" {
-			t.Fatalf("migrations = %+v, want 0001_init ＋ 0002_fts ＋ 0003_hooks ＋ 0004_item ＋ 0005_repo_link ＋ 0006_node_types", ms)
+			ms[4].version != 5 || ms[4].name != "repo_link" || ms[5].version != 6 || ms[5].name != "node_types" ||
+			ms[6].version != 7 || ms[6].name != "history_actions" || ms[7].version != 8 || ms[7].name != "status_archived" {
+			t.Fatalf("migrations = %+v, want 0001_init ＋ 0002_fts ＋ 0003_hooks ＋ 0004_item ＋ 0005_repo_link ＋ 0006_node_types ＋ 0007_history_actions ＋ 0008_status_archived", ms)
 		}
 		if !strings.Contains(ms[0].sql, "CREATE TABLE nodes") {
 			t.Error("0001_init.sql 內容不含 CREATE TABLE nodes")
@@ -315,6 +316,12 @@ func TestLoadMigrations(t *testing.T) {
 		}
 		if !strings.Contains(ms[5].sql, "CREATE TABLE node_types") {
 			t.Error("0006_node_types.sql 內容不含 CREATE TABLE node_types")
+		}
+		if !strings.Contains(ms[6].sql, "'delete'") {
+			t.Error("0007_history_actions.sql 內容不含 delete 的 CHECK")
+		}
+		if !strings.Contains(ms[7].sql, "'archived'") {
+			t.Error("0008_status_archived.sql 內容不含 archived 的 CHECK")
 		}
 	})
 	cases := []struct {
