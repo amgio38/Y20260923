@@ -106,6 +106,39 @@ jobs:
         shell: powershell
         run: ./scripts/install-ps1.test.ps1
 
+  # release.yml 的打包工作和發布工作靠 upload-artifact／download-artifact 把壓縮檔傳過去，
+  # 而 release 只有打版本標籤時才會跑，pull request 碰不到它。這個工作用同樣的方式
+  # （名稱、dist/* 的路徑、下載到另一個目錄）傳一遍，這樣 Dependabot 升這兩個 action 的 PR
+  # 在合併前就會被證明：新版本傳過去的檔案內容一模一樣、數量沒少。
+  artifact-roundtrip:
+    name: artifact upload/download round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: make files shaped like the release assets
+        run: |
+          mkdir dist
+          echo a > dist/projectboard-linux-amd64.tar.gz
+          echo b > dist/projectboard-linux-amd64.tar.gz.sha256
+          echo c > dist/projectboard-windows-amd64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: roundtrip-assets
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: roundtrip-assets
+          path: assets
+      - name: same files, same content
+        run: |
+          set -eu
+          for f in dist/*; do
+            cmp "$f" "assets/$(basename "$f")"
+          done
+          test "$(ls assets | wc -l)" -eq 3
+
   # 資訊用，不擋合併：把「測試在 Windows／macOS 上全過嗎」的實際答案攤出來。
   # 確定都過了以後，把 continue-on-error 拿掉就變成必須通過。
   other-os-tests:
