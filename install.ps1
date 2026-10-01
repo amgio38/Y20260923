@@ -34,6 +34,7 @@
 #   $env:PROJECT_BOARD_VERSION       要裝的 release 標籤（預設：最新版）
 #   $env:PROJECT_BOARD_RELEASE_BASE  release 下載位置的前綴（預設由 REPO 推出；內部鏡像用）
 #   $env:PROJECT_BOARD_GO_CACHE      獨立下載的 go 工具鏈放哪裡（預設 $HOME\.cache\project_board\go-toolchain）
+#   $env:PROJECT_BOARD_ARCH          明確指定 CPU（amd64／arm64），不指定就自己偵測
 
 param(
     [string]$Version = "",
@@ -77,15 +78,27 @@ function Get-Download($url, $dest) {
 # 預編譯版
 # ---------------------------------------------------------------------------
 
-# 這台機器的 CPU 對應的發布名稱（amd64／arm64），認不得回 $null。
-# 32 位元的 PowerShell 跑在 64 位元的 Windows 上時，PROCESSOR_ARCHITECTURE 會說 x86，
-# 真正的 CPU 在 PROCESSOR_ARCHITEW6432，所以兩個都要看。
-function Get-ReleaseArch {
-    $raw = $env:PROCESSOR_ARCHITEW6432
+# 這台機器的 CPU（原始字串）。優先順序：
+#   1. $env:PROJECT_BOARD_ARCH——明確指定（要替另一種 CPU 準備安裝目錄、或測試時用）；
+#   2. .NET 回報的「作業系統」架構——最可靠，而且 32 位元的 PowerShell 跑在 64 位元的
+#      Windows 上時也會說實話；
+#   3. 環境變數 PROCESSOR_ARCHITEW6432／PROCESSOR_ARCHITECTURE——舊版 .NET 的退路。
+#      （曾在 CI 的 Windows 上看到這個環境變數是空的，所以不能只靠它。）
+function Get-RawArch {
+    $raw = $env:PROJECT_BOARD_ARCH
+    if (-not $raw) {
+        try { $raw = [string][System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture } catch { $raw = $null }
+    }
+    if (-not $raw) { $raw = $env:PROCESSOR_ARCHITEW6432 }
     if (-not $raw) { $raw = $env:PROCESSOR_ARCHITECTURE }
-    switch -Regex ($raw) {
-        '^(AMD64|x86_64)$' { return "amd64" }
-        '^ARM64$' { return "arm64" }
+    return $raw
+}
+
+# 對應的發布名稱（amd64／arm64），認不得回 $null。
+function Get-ReleaseArch {
+    switch -Regex (Get-RawArch) {
+        '^(AMD64|x86_64|X64)$' { return "amd64" }
+        '^(ARM64|aarch64)$' { return "arm64" }
         default { return $null }
     }
 }
@@ -125,7 +138,7 @@ function Test-ArchiveMembers($zipPath) {
 function Install-Prebuilt($homeDir, $tmpDir, $repo, $version) {
     $arch = Get-ReleaseArch
     if (-not $arch) {
-        Warn "這個 CPU（$($env:PROCESSOR_ARCHITECTURE)）沒有預編譯版，改用原始碼編譯"
+        Warn "這個 CPU（$(Get-RawArch)）沒有預編譯版，改用原始碼編譯"
         return $false
     }
 

@@ -84,13 +84,13 @@ try {
 
     # 跑 install.ps1（子行程）。環境變數只在這次呼叫期間設定，結束就還原。
     $managed = @("PROJECT_BOARD_HOME", "PROJECT_BOARD_BINDIR", "PROJECT_BOARD_REPO", "PROJECT_BOARD_VERSION",
-        "PROJECT_BOARD_RELEASE_BASE", "PROJECT_BOARD_GO_CACHE", "PROCESSOR_ARCHITECTURE", "PROCESSOR_ARCHITEW6432", "PATH")
+        "PROJECT_BOARD_RELEASE_BASE", "PROJECT_BOARD_GO_CACHE", "PROJECT_BOARD_ARCH", "PATH")
     function Run-Install($envs, $installerArgs) {
         $saved = @{}
         foreach ($k in $managed) { $saved[$k] = [Environment]::GetEnvironmentVariable($k) }
         try {
-            [Environment]::SetEnvironmentVariable("PROCESSOR_ARCHITEW6432", $null)
-            if ($IsWindows -eq $false -or $env:OS -ne "Windows_NT") { [Environment]::SetEnvironmentVariable("PROCESSOR_ARCHITECTURE", "AMD64") }
+            # 預設不指定 CPU，讓 install.ps1 自己偵測（這台機器是 x64，所以拿到 amd64 的 zip）。
+            [Environment]::SetEnvironmentVariable("PROJECT_BOARD_ARCH", $null)
             [Environment]::SetEnvironmentVariable("PROJECT_BOARD_RELEASE_BASE", (Base-Url))
             # 預設的 PATH 裡沒有 git／go：任何一個案例「意外」退回原始碼編譯，都會停在第一個檢查，
             # 不會真的去 clone 和編譯（那會碰網路，而且慢）。需要真工具的案例自己傳 PATH。
@@ -241,7 +241,7 @@ try {
 
     # --- 沒有預編譯版 → 說明原因並走原始碼編譯（這裡沒有 git，所以停在檢查） ----------
     $hs = Join-Path $work "hs"
-    $r = Run-Install @{ PROJECT_BOARD_HOME = $hs; PROCESSOR_ARCHITECTURE = "x86"; PATH = $emptyBin } @()
+    $r = Run-Install @{ PROJECT_BOARD_HOME = $hs; PROJECT_BOARD_ARCH = "x86"; PATH = $emptyBin } @()
     Check ($r.Code -ne 0 -and ($r.Out -match '沒有預編譯版') -and ($r.Out -match '找不到 git')) "x86 沒有預編譯版：說明原因並走原始碼編譯" "exit $($r.Code): $($r.Out)"
     $r = Run-Install @{ PROJECT_BOARD_HOME = $hs; PATH = $emptyBin } @("-FromSource")
     Check ($r.Code -ne 0 -and ($r.Out -match '找不到 git') -and -not (Test-Path (Join-Path $hs "bin"))) "-FromSource 不去拿預編譯版" "exit $($r.Code): $($r.Out)"
@@ -264,3 +264,6 @@ if ($script:fail -ne 0) {
     exit 1
 }
 Write-Host "install-ps1.test: all cases passed"
+# 明確回 0：`pwsh -command ". 腳本"` 這種呼叫方式（GitHub Actions 就是）在腳本結束時會拿最後一個
+# 原生指令的結束碼當行程的結束碼，而「被拒絕的安裝」這類案例剛好留下 1。
+exit 0
