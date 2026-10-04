@@ -49,6 +49,18 @@ func dbApp(exe string) (*app, *bytes.Buffer, *bytes.Buffer) {
 	return a, out, errOut
 }
 
+func requireSymlinkSupport(t *testing.T) {
+	t.Helper()
+	link := filepath.Join(t.TempDir(), "pb-link")
+	target := filepath.Join(t.TempDir(), "pb-target")
+	if err := os.WriteFile(target, []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlink not supported on this platform: %v", err)
+	}
+}
+
 func TestResolveDefaultDBOrder(t *testing.T) {
 	root, exe := fakeProject(t)
 	elsewhere := t.TempDir()
@@ -73,9 +85,10 @@ func TestResolveDefaultDBOrder(t *testing.T) {
 	}
 
 	// symlink 指過去（PATH 上的 pb）也要解到專案根。
+	requireSymlinkSupport(t)
 	link := filepath.Join(t.TempDir(), "pb")
 	if err := os.Symlink(exe, link); err != nil {
-		t.Fatal(err)
+		t.Skipf("symlink not supported on this platform: %v", err)
 	}
 	a, _, _ = dbApp(link)
 	if p, _ := a.resolveDefaultDB(); p != filepath.Join(root, defaultDBPath) {
