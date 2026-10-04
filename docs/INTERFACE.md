@@ -44,6 +44,7 @@ pb get     <id>
 pb create  --type <t> --title <s> --actor <a> [--parent <id>] [--id <id>] [--owner <o>] [--priority p] [--tags s] [--body s]
 pb update  <id> --actor <a> [--title s] [--body s] [--owner o] [--priority p] [--tags s] [--sort n] [--if-unmodified-since <ts>]
 pb move    <id> <status> --actor <a> [--note s] [--if-unmodified-since <ts>]  # 狀態流轉（= transition）
+pb reparent <id> --parent <p> --actor <a> [--note s] [--if-unmodified-since <ts>]  # 搬單：把節點（含子孫）搬到別的父節點／專案
 pb assign  <id> <owner> --actor <a>
 pb link    <id> --kind <k> --target <s> --actor <a> [--note s]
 pb verify  <id> --note <evidence> --actor <a>
@@ -92,6 +93,7 @@ pb repo show <project-id> [--json]
 | `pb_create` | `actor`, `type`, `title`, `parent_id?`, `id?`, `owner?`, `priority?`, `tags?`, `body?` | 新節點（`id` 省略時的生成規則見 `DATA_MODEL.md` §7／§11.5） |
 | `pb_update` | `actor`, `id`, `title?`, `body?`, `owner?`, `priority?`, `tags?`, `sort?`, `expected_updated_at?` | 更新後節點；`expected_updated_at` 不符回 `conflict`（§11.6） |
 | `pb_transition` | `actor`, `id`, `to`, `note?`, `expected_updated_at?` | 節點 ＋ 新增 history；轉 `blocked` 須附 `note` 或既有 `depends_on` link（§11.3） |
+| `pb_move` | `actor`, `id`, `parent_id`, `note?`, `expected_updated_at?` | 搬單：節點（含子孫）搬到新父節點／專案，改寫 id ＋寫 `id_aliases`（舊 id 仍可由 `pb_get` 解析）；規則見 `DATA_MODEL.md` §12 |
 | `pb_assign` | `actor`, `id`, `owner` | 節點 |
 | `pb_link` | `actor`, `from_id`, `kind`, `target`, `note?` | link；`kind=depends_on` 會驗證 `target` 節點存在（§11.4） |
 | `pb_unlink` | `actor`, `link_id` | `{ok:true}` |
@@ -297,6 +299,7 @@ pb repo show <project-id> [--json]
 | `create --type issue --parent <id> --title "…" --actor <a>` | 開單 |
 | `update <id> --body "…" --actor <a>` | 改單 |
 | `move <id> <status> --actor <a> [--note …]` | 狀態流轉 |
+| `reparent <id> --parent <p> --actor <a> [--note …]` | 搬單（含子孫改父節點／專案；跨專案需 `--note`） |
 | `assign <id> <owner> --actor <a>` | 派單 |
 | `link <id> --kind commit --target 8094064 --actor <a>` | 掛 commit／依賴 |
 | `verify <id> --note "…" --actor <a>` | 驗收（→ done）；`--note` 為正式參數，`--evidence` 為 skill 別名 |

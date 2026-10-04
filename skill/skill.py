@@ -46,7 +46,7 @@ DEFAULT_PROJECT_DIR = None
 # 讀取類：找不到 binary 時可退回 REST（v1 唯讀）。
 READ_CMDS = ("tree", "get", "history", "stats", "search", "healthz", "deps", "checklist", "report")
 # 寫入類：一定要 binary（REST v1 唯讀）。
-WRITE_CMDS = ("create", "update", "move", "assign", "link", "verify", "comment",
+WRITE_CMDS = ("create", "update", "move", "reparent", "assign", "link", "verify", "comment",
               "hook", "unhook", "commit", "repo", "import")
 # 注意：這裡**沒有**子命令白名單（2026-09-28 拿掉）。舊版用 ALL_CMDS 逐一列舉，
 # pb 每長一個新子命令（hook／checklist／import／commit／repo／version…）就被擋在門外。
@@ -362,6 +362,7 @@ HELP = """project_board — 團隊單板（skill）
   create    --type <t> --title <s> [--parent <id>] [--id <id>] [--owner <o>] [--priority p] [--tags s] [--body s]
   update    <id> [--title s] [--body s] [--owner o] [--priority p] [--tags s] [--sort n] [--if-unmodified-since <ts>]
   move      <id> <status> [--note s] [--if-unmodified-since <ts>]
+  reparent  <id> --parent <new-parent> [--note s] [--if-unmodified-since <ts>]  # 搬單（含子孫；跨專案需 --note）
   assign    <id> <owner>
   link      <id> --kind <k> --target <s> [--note s]
   verify    <id> --note <證據>                 # --evidence 亦可（別名）；收單請走 MCP pb_verify

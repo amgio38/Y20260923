@@ -1,6 +1,6 @@
 # DATA_MODEL.md — ProjectBoard 資料模型
 
-> 真相源：`var/board.db`（SQLite 3，WAL）。本檔為 schema 權威版，目前 `schema_version=8`（見
+> 真相源：`var/board.db`（SQLite 3，WAL）。本檔為 schema 權威版，目前 `schema_version=9`（見
 > `internal/store/migrations/`）；改到 schema 時這份文件要跟著更新，不要只改 migration。
 
 ---
@@ -13,6 +13,7 @@
 | `node_types` | node 型別的資料驅動定義（schema v6 起，見 §2a） |
 | `links` | 節點對外關聯與依賴（commit／file／PR／url…） |
 | `history` | 事件流（append-only，稽核用） |
+| `id_aliases` | 搬單（`MoveNode`）留下的舊 id → 現行 id（schema v9 起，見 §12） |
 | `meta` | 版本與系統鍵值 |
 
 ---
@@ -42,7 +43,8 @@ CREATE INDEX idx_nodes_owner       ON nodes(owner);
 
 - **`status` 是欄位，不是樹的一層** —— 同一棵樹才能 filter 出「未完成」。
 - `parent_id` 用 `ON DELETE RESTRICT`：**有子節點不准刪**（防止樹斷）。
-- `id` 發出後**不可改**（見 §5）。
+- `id` 發出後**不可改**——**唯一例外是搬單 `MoveNode`（見 §12）**：搬移會把整棵子樹的 id 改寫成新路徑，
+  舊 id 進 `id_aliases` 當別名（改名會斷 `links`／`history`，所以由同一個 transaction 一併改寫）。
 
 ## 2a. `node_types`（schema v6 起，type 的權威來源）
 
@@ -101,7 +103,7 @@ CREATE TABLE history (
   ts       TEXT NOT NULL,                       -- ISO8601
   actor    TEXT NOT NULL,                       -- 見 §6；來源見 §11.1
   action   TEXT NOT NULL CHECK (action IN
-             ('create','update','transition','assign','link','unlink','comment','verify')),
+             ('create','update','transition','assign','link','unlink','comment','verify','delete','move')),
   field    TEXT NOT NULL DEFAULT '',            -- update 時改的欄位
   from_val TEXT NOT NULL DEFAULT '',            -- 舊值（transition 時為舊狀態）
   to_val   TEXT NOT NULL DEFAULT '',            -- 新值
@@ -190,7 +192,7 @@ id 的形狀由該 type 在 `node_types`（§2a）的 `id_shape` 決定，**不�
 
 規則：
 - `SLUG`／`KEY`：大寫、`A–Z 0–9 -`；禁空白。**沿用既有單名**（如 `ISSUE-ADMIN-BFF-UT90-A`）以便對帳。
-- ID 唯一且**不可變**（改名會斷 links／history）。
+- ID 唯一且**不可變**（改名會斷 links／history）——唯一例外是搬單 `MoveNode`，見 §12。
 - 若撞名，`create` 回錯誤（不自動加尾碼，避免失控）。
 - **省略 `--id`／`id` 參數時的自動生成規則**（見 §11.5）：由 `title` slugify（轉大寫、非 `[A-Z0-9]` 一律轉 `-`、連續 `-` 收斂成一個、去頭尾 `-`）產生 `SLUG`／`KEY`，再依 `id_shape` 接上 `parent`／`PREFIX`。撞名一樣直接回錯誤，呼叫端需換 `title` 或改帶明確 `--id`。
 
@@ -305,4 +307,68 @@ Y20260916                                       project  in_progress  owner=huma
 
 `INTEGRATION.md` §7 現在的驗收清單是「每個 harness 手動點一次」。這對第一次上線可以，但之後任何一次改動（新增 tool、改參數）都要重新手點一輪，容易漏。
 
-**規則**：`internal/mcp` 至少要有一支自動化整合測試，起一個暫存 DB，跑完整 JSON-RPC round trip（`initialize`→`tools/list`（驗證所有 `pb_*` 都在，工具數量隨新增工具增長，目前 20 個）→ `pb_create`→`pb_transition`→`pb_verify`→`pb_delete`），跑在 `go test` 裡，算進覆蓋率／DoD。各 harness 的手動清單留著當「跟外部 harness 相容性」的補充驗證，不是唯一防線。**已實作**：`internal/mcp/mcp_test.go` 有這支 round-trip 測試。
+**規則**：`internal/mcp` 至少要有一支自動化整合測試，起一個暫存 DB，跑完整 JSON-RPC round trip（`initialize`→`tools/list`（驗證所有 `pb_*` 都在，工具數量隨新增工具增長，目前 21 個）→ `pb_create`→`pb_transition`→`pb_verify`→`pb_delete`），跑在 `go test` 裡，算進覆蓋率／DoD。各 harness 的手動清單留著當「跟外部 harness 相容性」的補充驗證，不是唯一防線。**已實作**：`internal/mcp/mcp_test.go` 有這支 round-trip 測試。
+
+---
+
+## 12. 搬單 `MoveNode`（schema v9；Y20260920/REQ-MOVE-NODE/ISSUE-MOVE-NODE-CORE）
+
+把一個節點（連全部子孫）搬到另一個父節點底下，父節點可在同一專案或別的專案。背景：2026-10-01 一組單子掛錯專案，板子沒有搬單功能，只能「新專案複製一張、舊單 cancel」→ 歷史／留言／commit 連結全斷在舊 id。
+
+### 12.1 id 改寫是唯一例外
+
+`nodes.id` 是路徑式（`<parent>/<PREFIX>-<SLUG>`），搬了位置路徑就變。`MoveNode` **實體改寫**整棵子樹的 id，維持「id 錨定路徑」的不變量：
+
+```
+newID(n) = 新 parent 前綴 + 舊 id 去掉舊 parent 前綴的尾段
+```
+
+被改寫的（同一個 transaction 內）：
+- `nodes.id`（子樹每個節點）＋ `nodes.parent_id`（root 指新 parent；子孫指彼此的新 id）
+- `links.from_id`、`links.target`（只改 `kind=depends_on`；`commit`／`url`／`file` 等外部字串**不動**）
+- `history.node_id`、`hooks.node_id`（事件與訂閱跟著節點走）
+- 舊 id 寫入 `id_aliases`（見 §12.3）
+
+### 12.2 `id_aliases`（schema v9）
+
+```sql
+CREATE TABLE id_aliases (
+  old_id   TEXT PRIMARY KEY,   -- 搬移前的舊 id
+  new_id   TEXT NOT NULL,      -- 現行 id（節點再被搬時，這裡會持續指向最新位置）
+  moved_at TEXT NOT NULL,      -- ISO8601（台北）
+  actor    TEXT NOT NULL       -- 執行搬移者（owner 名冊內）
+);
+CREATE INDEX idx_id_aliases_new ON id_aliases(new_id);
+```
+
+- 同一個節點再被搬時，既有別名會被**重指**到最新位置（不累積長鏈）。
+- 節點被刪除時，指向它的別名一起清掉（`Delete` 內處理）。
+
+### 12.3 解析（舊 id 仍查得到）
+
+- `Store.Get`：先用 id 取節點；取不到才查 `id_aliases` 導到新位置（**現行活節點優先**，避免舊 id 被下一個專案重用時誤導）。
+- `Store.MoveNode`：`id` 與新 `parent` 都可以帶舊 id（先看有沒有活節點，沒有才走 alias）。
+
+### 12.4 規則與錯誤
+
+| 情境 | 行為 |
+|---|---|
+| 搬 project／根節點（`parent_id` 為空） | 拒絕（`ErrCannotMove`） |
+| 搬到自己或自己的子孫底下 | 拒絕（`ErrCannotMove`） |
+| 新 parent 不存在 | 拒絕（`ErrNotFound`） |
+| `item`／`bug` 的 parent 不是 `req` | 拒絕（`ErrItemParentNotReq`／`ErrParentTypeMismatch`） |
+| 目標位置已有同名 id | 拒絕（`ErrIDExists`，**不加尾碼**，與 `Create` 一致） |
+| 搬到**目前**父節點 | no-op（不寫、不留 history） |
+| 跨專案搬移缺 note | 拒絕（無驗身機制下的紀律要求，非權限檢查） |
+| 帶 `expected_updated_at` 不符 | 拒絕（`ErrConflict`，樂觀鎖） |
+
+- 狀態／owner／sort **原樣保留**。
+- history 新增一筆 `action=move`（記在搬後的 root：`field=parent`、`from=舊 parent`、`to=新 parent`、`note=理由`）。
+- **失敗語意**：全部在單一 transaction 內完成（`PRAGMA defer_foreign_keys=ON`，因整批 id 改寫會中途短暫破壞外鍵指向），中途出錯整筆回滾。
+
+### 12.5 介面
+
+- CLI：`pb reparent <id> --parent <new-parent> [--note s] [--if-unmodified-since <ts>]`
+  （`pb move` 已被「狀態流轉」佔用，故搬單用 `reparent`，見 `INTERFACE.md` §1）。
+- MCP：`pb_move`（`actor`、`id`、`parent_id` 必填；`note`、`expected_updated_at` 選填）。
+- 無 REST／dashboard 端點：REST 契約為唯讀、dashboard 亦唯讀，這輪不做。

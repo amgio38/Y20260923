@@ -168,8 +168,8 @@ func TestFTSMigrationBackfillsExistingNodes(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 	v, err := s.SchemaVersion(bg)
-	if err != nil || v != 8 {
-		t.Fatalf("schema_version = %d (err=%v), want 8", v, err)
+	if err != nil || v != 9 {
+		t.Fatalf("schema_version = %d (err=%v), want 9", v, err)
 	}
 	got, err := s.SearchAdvanced(bg, "員中心", "", "", "")
 	if err != nil {

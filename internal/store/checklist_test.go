@@ -66,8 +66,8 @@ func TestItemMigrationAllowsItem(t *testing.T) {
 	}
 	// schema 版本與 nodes 的 DDL（v6 起 type 由 node_types FK 管，不再是 CHECK enum）
 	v, err := s.SchemaVersion(bg)
-	if err != nil || v != 8 {
-		t.Fatalf("schema_version = %d (err=%v), want 8", v, err)
+	if err != nil || v != 9 {
+		t.Fatalf("schema_version = %d (err=%v), want 9", v, err)
 	}
 	var ddl string
 	if err := s.db.QueryRowContext(bg,

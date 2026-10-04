@@ -98,6 +98,8 @@ func (a *app) dispatch(args []string) int {
 		return a.cmdUpdate(rest)
 	case "move":
 		return a.cmdMove(rest)
+	case "reparent":
+		return a.cmdReparent(rest)
 	case "assign":
 		return a.cmdAssign(rest)
 	case "link":
@@ -163,6 +165,7 @@ func (a *app) usage() {
   update <id> [--title s] [--body s] [--owner o] [--priority p] [--tags s] [--sort n]
          [--if-unmodified-since <ts>]
   move   <id> <status> [--note s] [--if-unmodified-since <ts>]
+  reparent <id> --parent <p> [--note s] [--if-unmodified-since <ts>]
   assign <id> <owner>
   link   <id> --kind <k> --target <s> [--note s]
   verify <id> --note <evidence>

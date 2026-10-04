@@ -42,6 +42,7 @@ binary 若是 `<root>/bin/pb`，且未設 `PB_DB`，`skill.py` 會自動帶 `PB_
 | `create --type issue --parent <id> --title "…" --actor xiaoxia [--owner xiaoxia] [--priority high]` | 開單 |
 | `update <id> --actor xiaoxia [--body "…"] [--title "…"] [--owner …]` | 改單 |
 | `move <id> <status> --actor xiaoxia [--note "…"]` | 狀態流轉（見狀態機） |
+| `reparent <id> --parent <new-parent> --actor xiaoxia [--note "…"]` | 搬單：把節點（含子孫）搬到別的父節點／專案；id 會改寫，舊 id 仍可由 `get` 解析；跨專案需 `--note` |
 | `assign <id> <owner> --actor xiaoxia` | 派單 |
 | `link <id> --kind commit --target 8094064 --actor xiaoxia` | 掛 commit／`file`／`depends_on`／`pr` |
 | `hook <node_id> --target <agent> [--harness herdr] [--actor xiaoxia]` | 訂閱：node_id 或其子孫狀態變動時喚醒該 agent |

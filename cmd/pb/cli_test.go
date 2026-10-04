@@ -144,8 +144,8 @@ func TestDispatchUsage(t *testing.T) {
 func TestInitAndSeed(t *testing.T) {
 	ta := newTestApp(t)
 	out := ta.mustRun(t, exitOK, "init")
-	if !strings.Contains(out, "schema v8") { // 版本號跟著 migration 數量走（新增 0008_status_archived 後為 v8）
-		t.Errorf("init 輸出 = %q, want 含 schema v8", out)
+	if !strings.Contains(out, "schema v9") { // 版本號跟著 migration 數量走（新增 0009_move_node 後為 v9）
+		t.Errorf("init 輸出 = %q, want 含 schema v9", out)
 	}
 	if _, err := filepath.Glob(ta.dbPath); err != nil {
 		t.Fatal(err)

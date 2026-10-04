@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -107,9 +108,10 @@ func optTime(args map[string]any, name string) (*time.Time, error) {
 }
 
 // ---------------------------------------------------------------------------
-// 20 個 pb_* tools（v0.1 的 14 個照 INTERFACE.md §2 表格順序；v0.2 加 pb_deps
+// 21 個 pb_* tools（v0.1 的 14 個照 INTERFACE.md §2 表格順序；v0.2 加 pb_deps
 // 緊跟 pb_search；v0.3 加 pb_hook／pb_unhook／pb_hooks 收尾；
-// v0.4 加 pb_commit_attach／pb_set_repo；tools/list 照此原樣輸出）。
+// v0.4 加 pb_commit_attach／pb_set_repo；v0.5 加 pb_move 緊跟 pb_transition。
+// tools/list 照此原樣輸出）。
 // ---------------------------------------------------------------------------
 
 type toolHandler func(ctx context.Context, st *store.Store, args map[string]any) (any, error)
@@ -349,6 +351,54 @@ var tools = []toolDef{
 				return nil, err
 			}
 			return nodeJSON(node), nil
+		},
+	},
+	{
+		Name: "pb_move",
+		Desc: "搬單：把節點（連全部子孫）搬到另一個父節點底下，父節點可在同一專案或別的專案。id 會改寫成新路徑，舊 id 之後仍可由 pb_get 解析到新位置。專案／根節點不可搬；不可搬到自己或自己的子孫底下；新 parent 必須存在；item／bug 的 parent 須為 req；目標已有同名 id 回 id already exists（不自動加尾碼）。搬到目前父節點＝no-op。跨專案搬移需附 note（理由）。狀態／owner／sort 原樣保留。",
+		Schema: schema(map[string]any{
+			"actor":               strProp("寫入者，須在 owner 名冊內"),
+			"id":                  strProp("要搬的節點 id（連其全部子孫一起搬）"),
+			"parent_id":           strProp("新的父節點 id（同專案或別的專案）"),
+			"note":                strProp("說明；跨專案搬移時必填（理由）"),
+			"expected_updated_at": strProp("樂觀鎖，值為節點目前的 updated_at（RFC3339）。帶了且不符回 conflict，不寫入"),
+		}, "actor", "id", "parent_id"),
+		Handle: func(ctx context.Context, st *store.Store, args map[string]any) (any, error) {
+			actor, err := reqStr(args, "actor")
+			if err != nil {
+				return nil, err
+			}
+			id, err := reqStr(args, "id")
+			if err != nil {
+				return nil, err
+			}
+			parentID, err := reqStr(args, "parent_id")
+			if err != nil {
+				return nil, err
+			}
+			note, _ := optStr(args, "note")
+			exp, err := optTime(args, "expected_updated_at")
+			if err != nil {
+				return nil, err
+			}
+			res, err := st.MoveNode(ctx, actor, id, parentID, note, exp)
+			if err != nil {
+				return nil, err
+			}
+			type movePair struct{ Old, New string }
+			pairs := make([]movePair, 0, len(res.Moved))
+			for o, n := range res.Moved {
+				pairs = append(pairs, movePair{o, n})
+			}
+			sort.Slice(pairs, func(i, j int) bool { return pairs[i].Old < pairs[j].Old })
+			moved := make([]any, 0, len(pairs))
+			for _, p := range pairs {
+				moved = append(moved, map[string]any{"old_id": p.Old, "new_id": p.New})
+			}
+			out := nodeJSON(res.Node)
+			out["old_id"] = res.OldID
+			out["moved"] = moved
+			return out, nil
 		},
 	},
 	{

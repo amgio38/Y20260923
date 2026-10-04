@@ -40,6 +40,8 @@ func humanize(err error) string {
 		return "錯誤：depends_on 的目標節點不存在（先把那張單建起來再 link）"
 	case errors.Is(err, store.ErrCannotDelete):
 		return "錯誤：節點有子節點或關聯，不能刪除"
+	case errors.Is(err, store.ErrCannotMove):
+		return "錯誤：這個節點不能搬（根節點／專案不可搬，或不能搬到它自己／它自己的子孫底下）"
 	case errors.Is(err, store.ErrNotInReview):
 		return "錯誤：只有 status=review 的節點可以驗收（先用 pb move 推到 review）"
 	case errors.Is(err, domain.ErrIllegalTransition):

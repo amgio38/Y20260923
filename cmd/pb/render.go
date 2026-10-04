@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,6 +65,28 @@ func toNodesJSON(ns []domain.Node) []nodeJSON {
 		out = append(out, toNodeJSON(n))
 	}
 	return out
+}
+
+// moveMappingJSON／moveResultJSON：`pb reparent --json` 的輸出（REQ-MOVE-NODE）。
+type moveMappingJSON struct {
+	OldID string `json:"old_id"`
+	NewID string `json:"new_id"`
+}
+
+type moveResultJSON struct {
+	Node  nodeJSON          `json:"node"`
+	OldID string            `json:"old_id"`
+	NewID string            `json:"new_id"`
+	Moved []moveMappingJSON `json:"moved,omitempty"`
+}
+
+func toMoveResultJSON(res store.MoveResult) moveResultJSON {
+	moved := make([]moveMappingJSON, 0, len(res.Moved))
+	for o, n := range res.Moved {
+		moved = append(moved, moveMappingJSON{OldID: o, NewID: n})
+	}
+	sort.Slice(moved, func(i, j int) bool { return moved[i].OldID < moved[j].OldID })
+	return moveResultJSON{Node: toNodeJSON(res.Node), OldID: res.OldID, NewID: res.NewID, Moved: moved}
 }
 
 type linkJSON struct {

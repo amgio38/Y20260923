@@ -74,10 +74,10 @@ func TestNewAndMigrateCreateSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SchemaVersion: %v", err)
 	}
-	if v != 8 {
-		t.Fatalf("schema_version = %d, want 8", v)
+	if v != 9 {
+		t.Fatalf("schema_version = %d, want 9", v)
 	}
-	for _, tbl := range []string{"nodes", "links", "history", "meta", "nodes_fts", "hooks", "node_types"} {
+	for _, tbl := range []string{"nodes", "links", "history", "meta", "nodes_fts", "hooks", "node_types", "id_aliases"} {
 		var name string
 		if err := s.db.QueryRowContext(bg,
 			"SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", tbl).Scan(&name); err != nil {
@@ -190,8 +190,8 @@ func TestMigrateIdempotent(t *testing.T) {
 		}
 	}
 	v, err := s.SchemaVersion(bg)
-	if err != nil || v != 8 {
-		t.Fatalf("schema_version = %d (err=%v), want 8", v, err)
+	if err != nil || v != 9 {
+		t.Fatalf("schema_version = %d (err=%v), want 9", v, err)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestMigrateRejectsFutureAndBadVersion(t *testing.T) {
 	bg := context.Background()
 	t.Run("DB 版本比程式新", func(t *testing.T) {
 		s := newStore(t)
-		if _, err := s.db.ExecContext(bg, "UPDATE meta SET v = '9' WHERE k = 'schema_version'"); err != nil {
+		if _, err := s.db.ExecContext(bg, "UPDATE meta SET v = '99' WHERE k = 'schema_version'"); err != nil {
 			t.Fatal(err)
 		}
 		if err := s.Migrate(bg); err == nil || !strings.Contains(err.Error(), "大於") {
@@ -293,11 +293,12 @@ func TestLoadMigrations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loadMigrations: %v", err)
 		}
-		if len(ms) != 8 || ms[0].version != 1 || ms[0].name != "init" || ms[1].version != 2 || ms[1].name != "fts" ||
+		if len(ms) != 9 || ms[0].version != 1 || ms[0].name != "init" || ms[1].version != 2 || ms[1].name != "fts" ||
 			ms[2].version != 3 || ms[2].name != "hooks" || ms[3].version != 4 || ms[3].name != "item" ||
 			ms[4].version != 5 || ms[4].name != "repo_link" || ms[5].version != 6 || ms[5].name != "node_types" ||
-			ms[6].version != 7 || ms[6].name != "history_actions" || ms[7].version != 8 || ms[7].name != "status_archived" {
-			t.Fatalf("migrations = %+v, want 0001_init ＋ 0002_fts ＋ 0003_hooks ＋ 0004_item ＋ 0005_repo_link ＋ 0006_node_types ＋ 0007_history_actions ＋ 0008_status_archived", ms)
+			ms[6].version != 7 || ms[6].name != "history_actions" || ms[7].version != 8 || ms[7].name != "status_archived" ||
+			ms[8].version != 9 || ms[8].name != "move_node" {
+			t.Fatalf("migrations = %+v, want 0001_init ＋ … ＋ 0008_status_archived ＋ 0009_move_node", ms)
 		}
 		if !strings.Contains(ms[0].sql, "CREATE TABLE nodes") {
 			t.Error("0001_init.sql 內容不含 CREATE TABLE nodes")
@@ -322,6 +323,9 @@ func TestLoadMigrations(t *testing.T) {
 		}
 		if !strings.Contains(ms[7].sql, "'archived'") {
 			t.Error("0008_status_archived.sql 內容不含 archived 的 CHECK")
+		}
+		if !strings.Contains(ms[8].sql, "CREATE TABLE id_aliases") || !strings.Contains(ms[8].sql, "'move'") {
+			t.Error("0009_move_node.sql 內容不含 id_aliases 表或 move 的 CHECK")
 		}
 	})
 	cases := []struct {

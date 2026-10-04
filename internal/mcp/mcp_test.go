@@ -156,8 +156,9 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("serverInfo.name = %q", initRes.ServerInfo.Name)
 	}
 
-	// 2. tools/list：20 個 pb_* 都在（v0.1 的 14 個照 INTERFACE.md §2 順序，
-	// v0.2 的 pb_deps 緊跟 pb_search；v0.3 的 pb_hook／pb_unhook／pb_hooks 收尾）。
+	// 2. tools/list：21 個 pb_* 都在（v0.1 的 14 個照 INTERFACE.md §2 順序，
+	// v0.2 的 pb_deps 緊跟 pb_search；v0.3 的 pb_hook／pb_unhook／pb_hooks 收尾；
+	// v0.5 的 pb_move 緊跟 pb_transition）。
 	r = raw(t, srv, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	var listRes struct {
 		Tools []struct {
@@ -168,7 +169,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("tools/list 解不開：%v", err)
 	}
 	wantTools := []string{
-		"pb_tree", "pb_get", "pb_create", "pb_update", "pb_transition",
+		"pb_tree", "pb_get", "pb_create", "pb_update", "pb_transition", "pb_move",
 		"pb_assign", "pb_link", "pb_unlink", "pb_verify", "pb_comment",
 		"pb_search", "pb_deps", "pb_history", "pb_stats", "pb_delete",
 		"pb_hook", "pb_unhook", "pb_hooks", "pb_commit_attach", "pb_set_repo",

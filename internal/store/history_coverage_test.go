@@ -294,8 +294,8 @@ func TestHistoryActionsMigrationFromV6(t *testing.T) {
 	if err := s.Migrate(bg); err != nil { // 冪等：可重跑
 		t.Fatalf("二次 Migrate: %v", err)
 	}
-	if v, _ := s.SchemaVersion(bg); v != 8 {
-		t.Fatalf("升級後版本 = %d, want 8", v)
+	if v, _ := s.SchemaVersion(bg); v != 9 {
+		t.Fatalf("升級後版本 = %d, want 9", v)
 	}
 	var after int
 	if err := s.db.QueryRowContext(bg, "SELECT COUNT(*) FROM history").Scan(&after); err != nil {

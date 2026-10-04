@@ -391,6 +391,48 @@ func (a *app) cmdMove(args []string) int {
 	})
 }
 
+// cmdReparent：把節點（連全部子孫）搬到另一個父節點底下（REQ-MOVE-NODE）。
+// 註：CLI 的 `move` 已被「狀態流轉」佔用（INTERFACE.md §1），搬單用 `reparent`。
+func (a *app) cmdReparent(args []string) int {
+	fs := a.newFlagSet("reparent")
+	db := a.dbFlag(fs)
+	actor := a.actorFlag(fs)
+	parent := fs.String("parent", "", "新的父節點 id（必填；同專案或別的專案）")
+	note := fs.String("note", "", "說明（跨專案搬移時必填：理由）")
+	since := fs.String("if-unmodified-since", "", "樂觀鎖：與現值不符即拒絕（RFC3339）")
+	asJSON := fs.Bool("json", false, "輸出 JSON")
+	if err := fs.Parse(reorderArgs(fs, args)); err != nil {
+		return exitUsage
+	}
+	if fs.NArg() != 1 {
+		return a.usageErr("用法：pb reparent <id> --parent <new-parent> [--note s] [--if-unmodified-since <ts>]")
+	}
+	if *parent == "" {
+		return a.usageErr("--parent 是必填（新的父節點 id）")
+	}
+	id := fs.Arg(0)
+	expected, err := parseSince(*since)
+	if err != nil {
+		return a.usageErr("%s", err)
+	}
+	who, err := a.resolveActor(*actor)
+	if err != nil {
+		return a.fail(err)
+	}
+	return a.withStore(*db, func(ctx context.Context, st *store.Store) error {
+		res, err := st.MoveNode(ctx, who, id, *parent, *note, expected)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return a.writeJSON(toMoveResultJSON(res))
+		}
+		fmt.Fprintf(a.stdout, "已搬移 %s → %s（含子孫共 %d 個節點，updated_at=%s）\n",
+			res.OldID, res.NewID, len(res.Moved), fmtTime(res.Node.UpdatedAt))
+		return nil
+	})
+}
+
 func (a *app) cmdAssign(args []string) int {
 	fs := a.newFlagSet("assign")
 	db := a.dbFlag(fs)

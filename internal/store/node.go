@@ -263,6 +263,14 @@ func (s *Store) Tree(ctx context.Context, f TreeFilter) ([]domain.Node, error) {
 // Get 取單節點 ＋ 出向 links ＋ 子節點。
 func (s *Store) Get(ctx context.Context, id string) (domain.Node, []domain.Link, []domain.Node, error) {
 	n, err := s.getNode(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		// 舊 id（節點搬移後）：查 id_aliases 導到新位置；導不到才回原本的 not found。
+		if resolved, rerr := resolveAliasQ(ctx, s.db, id); rerr == nil && resolved != id {
+			if n2, err2 := s.getNode(ctx, resolved); err2 == nil {
+				id, n, err = resolved, n2, nil
+			}
+		}
+	}
 	if err != nil {
 		return domain.Node{}, nil, nil, err
 	}
@@ -760,6 +768,10 @@ func (s *Store) Delete(ctx context.Context, actor, id string) error {
 			}); err != nil {
 				return err
 			}
+		}
+		// 節點刪掉後，指向它的 id 別名（搬移留下的舊 id）也一起清掉，免得日後誤導到不存在的節點。
+		if _, err := tx.ExecContext(ctx, "DELETE FROM id_aliases WHERE new_id = ?", id); err != nil {
+			return fmt.Errorf("delete aliases of %q: %w", id, err)
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM nodes WHERE id = ?", id); err != nil {
 			return fmt.Errorf("delete node %q: %w", id, err)
