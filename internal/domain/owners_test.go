@@ -145,7 +145,7 @@ func TestLoadOwners_ExeRootViaSymlink(t *testing.T) {
 	writeOwners(t, real, "")
 	link := filepath.Join(root, "bin", "pb")
 	if err := os.Symlink(real, link); err != nil {
-		t.Skipf("symlink not supported on this platform: %v", err)
+		t.Fatalf("symlink: %v", err)
 	}
 	stubExe(t, link)
 	t.Chdir(t.TempDir())

@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"errors"
-	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -245,16 +245,8 @@ func TestHookLoop(t *testing.T) {
 
 // TestHerdrWakerCommandShape：真 Waker 的參數形狀＝`<bin> agent prompt <target> <訊息>`（分開傳、不經 shell）。
 func TestHerdrWakerCommandShape(t *testing.T) {
-	dir := t.TempDir()
-	argsFile := dir + "/args.txt"
-	script := dir + "/fake-herdr"
-	if err := writeFile(script, "#!/bin/sh\nprintf '%s\\n' \"$@\" > "+argsFile+"\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(script, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	w := herdrWaker{bin: script}
+	argsFile := filepath.Join(t.TempDir(), "args.txt")
+	w := herdrWaker{bin: stubHerdr(t, herdrStubSpec{Mode: "record", ArgsFile: argsFile})}
 	if err := w.Wake("yilong", "訊息 帶空白; rm -rf /"); err != nil {
 		t.Fatalf("Wake: %v", err)
 	}
@@ -267,21 +259,13 @@ func TestHerdrWakerCommandShape(t *testing.T) {
 
 // TestHerdrWakerFailure：herdr 不在（回非零）→ 回錯，訊息帶得出 stderr。
 func TestHerdrWakerFailure(t *testing.T) {
-	dir := t.TempDir()
-	script := dir + "/bad-herdr"
-	if err := writeFile(script, "#!/bin/sh\necho 'boom' >&2\nexit 3\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(script, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	w := herdrWaker{bin: script}
+	w := herdrWaker{bin: stubHerdr(t, herdrStubSpec{Mode: "boom"})}
 	err := w.Wake("yilong", "x")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("err = %v, want 帶 boom", err)
 	}
 	// 找不到執行檔也要回錯（不 panic）
-	missing := herdrWaker{bin: dir + "/nope"}
+	missing := herdrWaker{bin: filepath.Join(t.TempDir(), "nope")}
 	if err := missing.Wake("yilong", "x"); err == nil {
 		t.Error("執行檔不存在應回錯")
 	}
@@ -343,35 +327,23 @@ func TestPickPane(t *testing.T) {
 	}
 }
 
-// fakeHerdrScript：假 herdr——`agent prompt <target>` 只認 pane id（w1:*），
-// 其他 target 回 agent_not_found；`pane list` 回 paneListJSON。每次呼叫記到 log。
-func fakeHerdrScript(t *testing.T, paneList string) (script, logFile string) {
+// fakeHerdr：假 herdr——`agent prompt <target>` 只認 pane id（w1:*），
+// 其他 target 回 agent_not_found；`pane list` 回 paneList。每次呼叫的 argv 記到 logFile。
+func fakeHerdr(t *testing.T, paneList string) (bin, logFile string) {
 	t.Helper()
 	dir := t.TempDir()
-	logFile = dir + "/calls.txt"
-	listFile := dir + "/panes.json"
+	logFile = filepath.Join(dir, "calls.txt")
+	listFile := filepath.Join(dir, "panes.json")
 	if err := writeFile(listFile, paneList); err != nil {
 		t.Fatal(err)
 	}
-	script = dir + "/fake-herdr"
-	body := "#!/bin/sh\n" +
-		"echo \"$*\" >> " + logFile + "\n" +
-		"if [ \"$1\" = pane ] && [ \"$2\" = list ]; then cat " + listFile + "; exit 0; fi\n" +
-		"case \"$3\" in w1:*) exit 0;; esac\n" +
-		"echo '{\"error\":{\"code\":\"agent_not_found\",\"message\":\"agent target '\"$3\"' not found\"}}' >&2\n" +
-		"exit 1\n"
-	if err := writeFile(script, body); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(script, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return script, logFile
+	bin = stubHerdr(t, herdrStubSpec{Mode: "panes", LogFile: logFile, ListFile: listFile})
+	return bin, logFile
 }
 
 // TestHerdrWakerFallsBackToPaneID：target 認不得 → 查 pane 清單 → 用 pane id 重送。
 func TestHerdrWakerFallsBackToPaneID(t *testing.T) {
-	script, logFile := fakeHerdrScript(t, paneListJSON)
+	script, logFile := fakeHerdr(t, paneListJSON)
 	w := herdrWaker{bin: script}
 	if err := w.Wake("pi", "有新交辦"); err != nil {
 		t.Fatalf("Wake: %v", err)
@@ -385,7 +357,7 @@ func TestHerdrWakerFallsBackToPaneID(t *testing.T) {
 
 // TestHerdrWakerDirectHitSkipsLookup：target 直接送得到就不查清單。
 func TestHerdrWakerDirectHitSkipsLookup(t *testing.T) {
-	script, logFile := fakeHerdrScript(t, paneListJSON)
+	script, logFile := fakeHerdr(t, paneListJSON)
 	if err := (herdrWaker{bin: script}).Wake("w1:p4", "x"); err != nil {
 		t.Fatalf("Wake: %v", err)
 	}
@@ -401,7 +373,7 @@ func TestHerdrWakerAmbiguousOrMissingRefuses(t *testing.T) {
 		{"xiaoxia", paneListJSON, "沒有對應的 pane"},
 		{"pi", "garbage", "不是預期的 JSON"},
 	} {
-		script, logFile := fakeHerdrScript(t, c.list)
+		script, logFile := fakeHerdr(t, c.list)
 		err := (herdrWaker{bin: script}).Wake(c.target, "x")
 		if err == nil || !strings.Contains(err.Error(), c.errHas) || !strings.Contains(err.Error(), "agent_not_found") {
 			t.Errorf("%s: err = %v, want 含 %q 與原始 agent_not_found", c.target, err, c.errHas)
@@ -414,16 +386,7 @@ func TestHerdrWakerAmbiguousOrMissingRefuses(t *testing.T) {
 
 // TestHerdrWakerPaneListFailure：`pane list` 本身失敗 → 回錯。
 func TestHerdrWakerPaneListFailure(t *testing.T) {
-	dir := t.TempDir()
-	script := dir + "/herdr"
-	body := "#!/bin/sh\nif [ \"$1\" = pane ]; then exit 4; fi\necho agent_not_found >&2\nexit 1\n"
-	if err := writeFile(script, body); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(script, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	err := (herdrWaker{bin: script}).Wake("pi", "x")
+	err := (herdrWaker{bin: stubHerdr(t, herdrStubSpec{Mode: "bork"})}).Wake("pi", "x")
 	if err == nil || !strings.Contains(err.Error(), "herdr pane list") {
 		t.Errorf("err = %v, want 帶 herdr pane list", err)
 	}

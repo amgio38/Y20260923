@@ -28,6 +28,12 @@ func chdir(t *testing.T, dir string) {
 func fakeProject(t *testing.T) (root, exe string) {
 	t.Helper()
 	root = t.TempDir()
+	// ProjectRootFor 會 EvalSymlinks（PATH 上的 pb 是真 symlink），把路徑正規化——macOS 的
+	// /var→/private/var、Windows 的 8.3 短名（RUNNER~1→runneradmin）都在此收斂。基準先解一次，
+	// 下面比對才是「同一個檔案」，而不是同一個字串（2026-10-05 修 informational job）。
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -47,18 +53,6 @@ func dbApp(exe string) (*app, *bytes.Buffer, *bytes.Buffer) {
 	a := &app{stdout: out, stderr: errOut, getenv: func(k string) string { return vars[k] }}
 	a.executable = func() (string, error) { return exe, nil }
 	return a, out, errOut
-}
-
-func requireSymlinkSupport(t *testing.T) {
-	t.Helper()
-	link := filepath.Join(t.TempDir(), "pb-link")
-	target := filepath.Join(t.TempDir(), "pb-target")
-	if err := os.WriteFile(target, []byte("ok"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Symlink(target, link); err != nil {
-		t.Skipf("symlink not supported on this platform: %v", err)
-	}
 }
 
 func TestResolveDefaultDBOrder(t *testing.T) {
@@ -85,10 +79,9 @@ func TestResolveDefaultDBOrder(t *testing.T) {
 	}
 
 	// symlink 指過去（PATH 上的 pb）也要解到專案根。
-	requireSymlinkSupport(t)
 	link := filepath.Join(t.TempDir(), "pb")
 	if err := os.Symlink(exe, link); err != nil {
-		t.Skipf("symlink not supported on this platform: %v", err)
+		t.Fatal(err)
 	}
 	a, _, _ = dbApp(link)
 	if p, _ := a.resolveDefaultDB(); p != filepath.Join(root, defaultDBPath) {
