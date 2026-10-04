@@ -1,14 +1,19 @@
 # ProjectBoard
 
-> 內用、本機優先、單一真相源的專案／需求／單管理系統。**AI 走 MCP／CLI 讀寫，人看 dashboard。**
-> License：MIT（見 `LICENSE`）。單一 Go binary，無 cgo，無外部服務依賴（無 DB server、無 Redis、無 Node build）。
+> Open-source project, requirement, and issue management system built for AI agents and human teams.
+> ProjectBoard keeps a single source of truth in SQLite, exposes MCP/CLI tooling for automation, and provides a lightweight dashboard for humans.
+> License: MIT. Single Go binary, no cgo, no external DB server, no Redis, no Node build step.
 
-**這份 README 是寫給 AI／coding agent 讀的**：照著做就能把整個系統裝起來、接上你的 harness、
-開始讀寫單。人類想看操作介面，直接開 dashboard（見下方「啟動」）。
+ProjectBoard is designed for engineering teams, startups, and autonomous agent workflows that need to manage projects, requirements, issues, bugs, and reports in one structured system. The core idea is simple: every item has a type and a lifecycle state, and all writes are recorded in a transparent history log.
+
+This repository is built for both machines and people:
+- AI agents and coding assistants can interact through MCP and CLI tools.
+- Humans can use the dashboard and REST API to review work, assignments, dependencies, and status transitions.
+- Git integrations can attach commits and PR references directly to project records.
 
 ---
 
-## 現況（2026-09-22）
+## Current status (2026-09-22)
 
 - Schema：`internal/store/migrations/` 共 6 版（node_types 已資料驅動，新增 type 不必再動 schema）。
 - CLI（`pb`）：init／seed／serve／mcp／tree／get／create／update／move／assign／link／verify／
