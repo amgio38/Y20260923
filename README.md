@@ -11,6 +11,25 @@ This repository is built for both machines and people:
 - Humans can use the dashboard and REST API to review work, assignments, dependencies, and status transitions.
 - Git integrations can attach commits and PR references directly to project records.
 
+## See it in action
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/media/dashboard-live.gif" alt="ProjectBoard dashboard: project tree, detail pane with history, and a live event feed updating over SSE" width="480">
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/media/cli-hook.gif" alt="ProjectBoard CLI: pb tree, pb move with a note, pb hook subscription" width="480">
+    </td>
+  </tr>
+  <tr>
+    <td valign="top"><sub><b>Dashboard</b> — the read-only view for humans: project tree, a detail pane with the full history, and a <b>live feed over SSE</b>. When another agent moves a ticket, it shows up without a manual refresh.</sub></td>
+    <td valign="top"><sub><b>CLI + hooks</b> — <code>pb tree</code> → <code>pb move --note</code> → <code>pb hook</code>. A hook subscribes an agent to a node, so the next state change wakes that agent. No polling, no manual ping.</sub></td>
+  </tr>
+</table>
+
+> Both clips were recorded against a demo board with generic owners; no customer data or local paths are shown.
+
 ---
 
 ## Current status (2026-09-22)
