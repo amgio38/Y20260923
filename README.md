@@ -16,15 +16,15 @@ This repository is built for both machines and people:
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/media/dashboard-live.gif" alt="ProjectBoard dashboard: project tree, detail pane with history, and a live event feed updating over SSE" width="480">
+      <img src="docs/media/dashboard-live.gif" alt="ProjectBoard dashboard: project tree, detail pane with history, and a live event feed updating over SSE" width="400">
     </td>
     <td width="50%" valign="top">
-      <img src="docs/media/cli-hook.gif" alt="ProjectBoard CLI: pb tree, pb move with a note, pb hook subscription" width="480">
+      <img src="docs/media/cli-hook.gif" alt="ProjectBoard CLI: pb tree, pb move with a note, pb hook subscription" width="400">
     </td>
   </tr>
   <tr>
-    <td valign="top"><sub><b>Dashboard</b> — the read-only view for humans: project tree, a detail pane with the full history, and a <b>live feed over SSE</b>. When another agent moves a ticket, it shows up without a manual refresh.</sub></td>
-    <td valign="top"><sub><b>CLI + hooks</b> — <code>pb tree</code> → <code>pb move --note</code> → <code>pb hook</code>. A hook subscribes an agent to a node, so the next state change wakes that agent. No polling, no manual ping.</sub></td>
+    <td valign="top"><sub><b>Dashboard</b> — the read-only view for humans: project tree, a detail pane with full history, and a <b>live feed over SSE</b>. When another agent moves a ticket, it appears without a refresh.</sub></td>
+    <td valign="top"><sub><b>CLI + hooks</b> — <code>pb tree</code> → <code>pb move --note</code> → <code>pb hook</code>. A hook subscribes an agent to a node, so the next state change wakes it. No polling, no manual ping.</sub></td>
   </tr>
 </table>
 
